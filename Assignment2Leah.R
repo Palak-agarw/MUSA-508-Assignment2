@@ -200,11 +200,14 @@ summ(regshoreline)
 summary(regshoreline)
 
 # School Attendance Areas
+## Elementary Schools
 ## Doesn't include Miami Beach
 ## Something is wrong with projection
 ElementarySchool <- st_read("https://opendata.arcgis.com/datasets/19f5d8dcd9714e6fbd9043ac7a50c6f6_0.geojson")
+
 ElementarySchool<- st_transform(ElementarySchool,'ESRI:102658') %>%
   select(-FID,-ID,-ZIPCODE,-PHONE,-REGION,-ID2,-FLAG,-CREATEDBY,-CREATEDDATE,-MODIFIEDBY,-MODIFIEDDATE)
+
 ElementarySchool<-filter(ElementarySchool,CITY==c("Miami","MiamiBeach"))
 
 ggplot() +
@@ -212,4 +215,36 @@ ggplot() +
   geom_sf(data = MiamiDF)+
   geom_sf(data = Neighborhoods)
   
-MiamiDFSchool<-st_join(MiamiDF, ElementarySchool, join = st_intersects)
+MiamiDF<-st_join(MiamiDF, ElementarySchool, join = st_intersects)
+
+## Middle Schools
+MiddleSchool <- st_read("https://opendata.arcgis.com/datasets/dd2719ff6105463187197165a9c8dd5c_0.geojson")
+
+MiddleSchool<- st_transform(MiddleSchool,'ESRI:102658') %>%
+  select(-FID,-ID,-ZIPCODE,-PHONE,-REGION,-ID2,-CREATEDBY,-CREATEDDATE,-MODIFIEDBY,-MODIFIEDDATE)
+
+MiddleSchool<-filter(MiddleSchool,CITY==c("Miami","MiamiBeach"))
+
+ggplot() +
+  geom_sf(data = MiddleSchool, fill = "grey40") +
+  geom_sf(data = MiamiDF) +
+  geom_sf(data = Neighborhoods)
+
+
+MiamiDF<-st_join(MiamiDF, MiddleSchool, join = st_intersects)
+
+## High Schools
+HighSchool <- st_read("https://opendata.arcgis.com/datasets/9004dbf5f7f645d493bfb6b875a43dc1_0.geojson")
+
+HighSchool<- st_transform(HighSchool,'ESRI:102658') %>%
+  select(-FID,-ID,-ZIPCODE,-PHONE,-REGION,-ID2,-CREATEDBY,-CREATEDDATE,-MODIFIEDBY,-MODIFIEDDATE)
+
+HighSchool<-filter(HighSchool,CITY==c("Miami","MiamiBeach"))
+
+ggplot() +
+  geom_sf(data = HighSchool, fill = "grey40") +
+  geom_sf(data = MiamiDF) +
+  geom_sf(data = Neighborhoods)
+
+
+MiamiDF<-st_join(MiamiDF, HighSchool, join = st_intersects)
