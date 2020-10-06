@@ -122,7 +122,9 @@ ggplot() +
                       name="Quintile\nBreaks") +
   labs(title="Sale Price, Miami") +
   mapTheme()
-  
+
+# Join Neighborhood data
+MiamiDFNeighborhood<-st_join(MiamiDF, Neighborhoods, join = st_intersects) 
 
 # Correlation Matrix
 
@@ -170,3 +172,23 @@ ggplot() +
 
 MiamiDFShoreline <- mutate(MiamiDF, distancetoshore=(st_distance(MiamiDF, Shoreline)))
 
+## Something weird going on with this regression
+regshoreline <- lm(SalePrice ~ ., data = st_drop_geometry(MiamiDFShoreline) %>% 
+            dplyr::select(SalePrice, distancetoshore))
+summ(regshoreline)
+summary(regshoreline)
+
+# School Attendance Areas
+## Doesn't include Miami Beach
+## Something is wrong with projection
+ElementarySchool <- st_read("https://opendata.arcgis.com/datasets/19f5d8dcd9714e6fbd9043ac7a50c6f6_0.geojson")
+ElementarySchool<- st_transform(ElementarySchool,'ESRI:102658') %>%
+  select(-FID,-ID,-ZIPCODE,-PHONE,-REGION,-ID2,-FLAG,-CREATEDBY,-CREATEDDATE,-MODIFIEDBY,-MODIFIEDDATE)
+ElementarySchool<-filter(ElementarySchool,CITY==c("Miami","MiamiBeach"))
+
+ggplot() +
+  geom_sf(data = ElementarySchool, fill = "grey40") +
+  geom_sf(data = MiamiDF)+
+  geom_sf(data = Neighborhoods)
+  
+MiamiDFSchool<-st_join(MiamiDF, ElementarySchool, join = st_intersects)
