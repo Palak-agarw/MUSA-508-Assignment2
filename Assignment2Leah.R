@@ -10,6 +10,7 @@ library(gridExtra)
 library(ggcorrplot)
 library(jtools)  
 library(viridis)
+library(fastDummies)
 
 
 # Themes and Functions
@@ -89,15 +90,23 @@ nn_function <- function(measureFrom,measureTo,k) {
 
 MiamiDF <- st_read("C:/Users/owner160829a/Documents/GitHub/MUSA-508-Assignment2/studentsData.geojson")
 
-MiamiDF <- st_transform(MiamiTrainingDF,'ESRI:102658') #%>% 
+MiamiDF <- st_transform(MiamiDF,'ESRI:102658') 
+
+##%>% 
 #select(-saleQual,-GPAR,-Land.Use,-Owner1,-Owner2,-saleDate,-Year)
 
 MiamiTrainingDF <- MiamiDF[!(MiamiDF$SalePrice==0),]
 
+#Wrangling XF Columns
+MiamiDFDummy<- mutate(MiamiDF,XFs=paste(XF1,XF2,XF3, sep=",")) %>%
+  dummy_cols(select_columns="XFs", split=",")
+
+MiamiTrainingDummyDF <- MiamiDFDummy[!(MiamiDFDummy$SalePrice==0),]
+
+  
+# Maps
 Neighborhoods <- st_read("https://opendata.arcgis.com/datasets/2f54a0cbd67046f2bd100fb735176e6c_0.geojson")%>%
   st_transform('ESRI:102658')
-
-# Maps
 
 ggplot() +
   geom_sf(data=Neighborhoods)+
@@ -134,3 +143,30 @@ reg <- lm(SalePrice ~ ., data = st_drop_geometry(MiamiTrainingDF) %>%
              dplyr::select(SalePrice, Bed, Bath, Stories, YearBuilt,LivingSqFt))
 summ(reg)
 summary(reg)
+
+#Adding Spatial Features
+## Beaches
+Beaches<- st_read("https://opendata.arcgis.com/datasets/9e30807e3efd44f3b16ab8d3657249f2_0.geojson")
+
+Beaches <- Beaches %>% 
+  st_as_sf(coords = c("Lon", "Lat"), crs = 4326, agr = "constant") %>%
+  st_transform('ESRI:102658')
+
+ggplot() +
+  geom_sf(data = Neighborhoods, fill = "grey40") +
+  geom_sf(data = Beaches, aes(color="pink"), 
+          show.legend = "point", size = 1) +
+  mapTheme()
+
+## Shoreline
+Shoreline <- st_read("https://opendata.arcgis.com/datasets/58386199cc234518822e5f34f65eb713_0.geojson")
+Shoreline<- st_transform(Shoreline,'ESRI:102658')
+
+ggplot() +
+  geom_sf(data = Neighborhoods, fill = "grey40") +
+  geom_sf(data = Shoreline)
+
+## Distance to shoreline
+
+MiamiDFShoreline <- mutate(MiamiDF, distancetoshore=(st_distance(MiamiDF, Shoreline)))
+
