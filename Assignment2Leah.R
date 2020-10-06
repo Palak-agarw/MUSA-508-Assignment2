@@ -12,7 +12,7 @@ library(jtools)
 library(viridis)
 library(fastDummies)
 
-
+options(scipen=999)
 # Themes and Functions
 mapTheme <- function(base_size = 12) {
   theme(
@@ -86,51 +86,59 @@ nn_function <- function(measureFrom,measureTo,k) {
   return(output)  
 }
 
-# Data Wrangling
-
+# Wrangle Miami Data
 MiamiDF <- st_read("C:/Users/owner160829a/Documents/GitHub/MUSA-508-Assignment2/studentsData.geojson")
 
-MiamiDF <- st_transform(MiamiDF,'ESRI:102658') 
+MiamiDF <- st_transform(MiamiDF,'ESRI:102658')
 
-##%>% 
-#select(-saleQual,-GPAR,-Land.Use,-Owner1,-Owner2,-saleDate,-Year)
+MiamiDF <- dplyr::select(MiamiDF,-saleQual,-WVDB,-HEX,-GPAR,-County.2nd.HEX,
+                         -County.Senior,-County.LongTermSenior,-County.Other.Exempt,
+                         -City.2nd.HEX,-City.Senior,-City.LongTermSenior,
+                         -City.Other.Exempt,-MillCode,-Land.Use,
+                         -Owner1,-Owner2,-Mailing.Address,-Mailing.City,
+                         -Mailing.State,-Mailing.Zip,-Mailing.Country)
 
-MiamiTrainingDF <- MiamiDF[!(MiamiDF$SalePrice==0),]
-
-#Wrangling XF Columns
-MiamiDFDummy<- mutate(MiamiDF,XFs=paste(XF1,XF2,XF3, sep=",")) %>%
+# Wrangle XF Columns
+MiamiDF<- mutate(MiamiDF,XFs=paste(XF1,XF2,XF3, sep=",")) %>%
   dummy_cols(select_columns="XFs", split=",")
 
-MiamiTrainingDummyDF <- MiamiDFDummy[!(MiamiDFDummy$SalePrice==0),]
+MiamiDF <- st_as_sf(MiamiDF)
 
-  
-# Maps
-Neighborhoods <- st_read("https://opendata.arcgis.com/datasets/2f54a0cbd67046f2bd100fb735176e6c_0.geojson")%>%
-  st_transform('ESRI:102658')
+# Join Neighborhood Data
+Neighborhoods <- st_read("https://opendata.arcgis.com/datasets/2f54a0cbd67046f2bd100fb735176e6c_0.geojson")
+
+Neighborhoods <- st_transform(Neighborhoods,'ESRI:102658')
+
+MiamiDF <- st_join(MiamiDF, Neighborhoods, join = st_intersects) 
+
+# Remove Challenge Houses
+
+MiamiDFKnown <- MiamiDF[!(MiamiDF$SalePrice==0),]
+
+# Map House Sales and Neighborhoods
 
 ggplot() +
   geom_sf(data=Neighborhoods)+
- geom_sf(data=MiamiTrainingDF)
+ geom_sf(data=MiamiDF)
 
 
 ggplot() +
   geom_sf(data = Neighborhoods, fill = "grey40") +
-  geom_sf(data = MiamiTrainingDF, aes(colour = q5(SalePrice)), 
+  geom_sf(data = MiamiDFKnown, aes(colour = q5(SalePrice)), 
           show.legend = "point", size = 1) +
   scale_colour_manual(values=palette5,
-                      labels=qBr(MiamiTrainingDF,"SalePrice"),
+                      labels=qBr(MiamiDFKnown,"SalePrice"),
                       name="Quintile\nBreaks") +
   labs(title="Sale Price, Miami") +
   mapTheme()
 
-# Join Neighborhood data
-MiamiDFNeighborhood<-st_join(MiamiDF, Neighborhoods, join = st_intersects) 
-
-# Correlation Matrix
+# Correlation Matrices
 
 numericVars <- 
-  select_if(st_drop_geometry(MiamiTrainingDF), is.numeric) %>% na.omit() %>%
-  select(SalePrice,Bed, Bath, Stories, Units, YearBuilt, LivingSqFt)
+  select_if(st_drop_geometry(MiamiDFKnown), is.numeric) %>% na.omit() %>%
+  select(SalePrice, Land, Bldg, Total, Assessed, City.Taxable, AdjustedSqFt,
+         LotSize, Bed, Bath, Stories, Units, YearBuilt, EffectiveYearBuilt,
+         LivingSqFt, ActualSqFt)
 
 ggcorrplot(
   round(cor(numericVars), 1), 
@@ -140,14 +148,29 @@ ggcorrplot(
   insig = "blank") +  
   labs(title = "Correlation across numeric variables") 
 
+dummyVars <- select_if(st_drop_geometry(MiamiDFKnown), is.numeric) %>% 
+  na.omit() %>% select("SalePrice", "XFs_Pool 8' res BETTER 3-8' dpth",
+                       "XFs_Luxury Pool - Better","XFs_Luxury Pool - Good.",
+                       "XFs_Pool - Wading - 2-4' depth",
+                       "XFs_Pool COMM BETTER 3-6' dpth",
+                       "XFs_Central A/C (Aprox 400 sqft/Ton)")
+
+ggcorrplot(
+  round(cor(dummyVars), 1), 
+  p.mat = cor_pmat(dummyVars),
+  colors = c("#25CB10", "white", "#FA7800"),
+  type="lower",
+  insig = "blank") +  
+  labs(title = "Correlation across XF variables")   
+
 # Regression
-reg <- lm(SalePrice ~ ., data = st_drop_geometry(MiamiTrainingDF) %>% 
+reg <- lm(SalePrice ~ ., data = st_drop_geometry(MiamiDFKnown) %>% 
              dplyr::select(SalePrice, Bed, Bath, Stories, YearBuilt,LivingSqFt))
 summ(reg)
 summary(reg)
 
-#Adding Spatial Features
-## Beaches
+# Adding Spatial Features
+## Beaches (Looks weird)
 Beaches<- st_read("https://opendata.arcgis.com/datasets/9e30807e3efd44f3b16ab8d3657249f2_0.geojson")
 
 Beaches <- Beaches %>% 
@@ -166,14 +189,12 @@ Shoreline<- st_transform(Shoreline,'ESRI:102658')
 
 ggplot() +
   geom_sf(data = Neighborhoods, fill = "grey40") +
-  geom_sf(data = Shoreline)
+  geom_sf(data = Shoreline, color = "blue")
 
-## Distance to shoreline
-
-MiamiDFShoreline <- mutate(MiamiDF, distancetoshore=(st_distance(MiamiDF, Shoreline)))
+MiamiDFKnown <- mutate(MiamiDFKnown, distancetoshore=(st_distance(MiamiDFKnown, Shoreline)))
 
 ## Something weird going on with this regression
-regshoreline <- lm(SalePrice ~ ., data = st_drop_geometry(MiamiDFShoreline) %>% 
+regshoreline <- lm(SalePrice ~ ., data = st_drop_geometry(MiamiDFKnown) %>% 
             dplyr::select(SalePrice, distancetoshore))
 summ(regshoreline)
 summary(regshoreline)
