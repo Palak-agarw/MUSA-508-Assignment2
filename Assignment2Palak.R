@@ -74,6 +74,8 @@ qBr <- function(df, variable, rnd) {
 
 q5 <- function(variable) {as.factor(ntile(variable, 5))}
 
+# Functions
+
 nn_function <- function(measureFrom,measureTo,k) {
   measureFrom_Matrix <- as.matrix(measureFrom)
   measureTo_Matrix <- as.matrix(measureTo)
@@ -93,19 +95,140 @@ nn_function <- function(measureFrom,measureTo,k) {
   return(output)  
 }
 
-# Data Wrangling
+#Function MultipleRingBuffer
+multipleRingBuffer <- function(inputPolygon, maxDistance, interval) 
+{
+  #create a list of distances that we'll iterate through to create each ring
+  distances <- seq(0, maxDistance, interval)
+  #we'll start with the second value in that list - the first is '0'
+  distancesCounter <- 2
+  #total number of rings we're going to create
+  numberOfRings <- floor(maxDistance / interval)
+  #a counter of number of rings
+  numberOfRingsCounter <- 1
+  #initialize an otuput data frame (that is not an sf)
+  allRings <- data.frame()
+  
+  #while number of rings  counteris less than the specified nubmer of rings
+  while (numberOfRingsCounter <= numberOfRings) 
+  {
+    #if we're interested in a negative buffer and this is the first buffer
+    #(ie. not distance = '0' in the distances list)
+    if(distances[distancesCounter] < 0 & distancesCounter == 2)
+    {
+      #buffer the input by the first distance
+      buffer1 <- st_buffer(inputPolygon, distances[distancesCounter])
+      #different that buffer from the input polygon to get the first ring
+      buffer1_ <- st_difference(inputPolygon, buffer1)
+      #cast this sf as a polygon geometry type
+      thisRing <- st_cast(buffer1_, "POLYGON")
+      #take the last column which is 'geometry'
+      thisRing <- as.data.frame(thisRing[,ncol(thisRing)])
+      #add a new field, 'distance' so we know how far the distance is for a give ring
+      thisRing$distance <- distances[distancesCounter]
+    }
+    
+    
+    #otherwise, if this is the second or more ring (and a negative buffer)
+    else if(distances[distancesCounter] < 0 & distancesCounter > 2) 
+    {
+      #buffer by a specific distance
+      buffer1 <- st_buffer(inputPolygon, distances[distancesCounter])
+      #create the next smallest buffer
+      buffer2 <- st_buffer(inputPolygon, distances[distancesCounter-1])
+      #This can then be used to difference out a buffer running from 660 to 1320
+      #This works because differencing 1320ft by 660ft = a buffer between 660 & 1320.
+      #bc the area after 660ft in buffer2 = NA.
+      thisRing <- st_difference(buffer2,buffer1)
+      #cast as apolygon
+      thisRing <- st_cast(thisRing, "POLYGON")
+      #get the last field
+      thisRing <- as.data.frame(thisRing$geometry)
+      #create the distance field
+      thisRing$distance <- distances[distancesCounter]
+    }
+    
+    #Otherwise, if its a positive buffer
+    else 
+    {
+      #Create a positive buffer
+      buffer1 <- st_buffer(inputPolygon, distances[distancesCounter])
+      #create a positive buffer that is one distance smaller. So if its the first buffer
+      #distance, buffer1_ will = 0. 
+      buffer1_ <- st_buffer(inputPolygon, distances[distancesCounter-1])
+      #difference the two buffers
+      thisRing <- st_difference(buffer1,buffer1_)
+      #cast as a polygon
+      thisRing <- st_cast(thisRing, "POLYGON")
+      #geometry column as a data frame
+      thisRing <- as.data.frame(thisRing[,ncol(thisRing)])
+      #add teh distance
+      thisRing$distance <- distances[distancesCounter]
+    }  
+    
+    #rbind this ring to the rest of the rings
+    allRings <- rbind(allRings, thisRing)
+    #iterate the distance counter
+    distancesCounter <- distancesCounter + 1
+    #iterate the number of rings counter
+    numberOfRingsCounter <- numberOfRingsCounter + 1
+  }
+  
+  #convert the allRings data frame to an sf data frame
+  allRings <- st_as_sf(allRings)
+}
 
+# Wrangle Miami Data
 MiamiDF <- st_read("studentsData.geojson")
 
-MiamiTrainingDF <- MiamiDF[!(MiamiDF$SalePrice==0),]
+MiamiDF <- st_transform(MiamiDF,'ESRI:102658')
 
-MiamiDF <- st_transform(MiamiTrainingDF,'ESRI:102658') #%>% 
-#select(-saleQual,-GPAR,-Land.Use,-Owner1,-Owner2,-saleDate,-Year)
+MiamiDF <- dplyr::select(MiamiDF,-saleQual,-WVDB,-HEX,-GPAR,-County.2nd.HEX,
+                         -County.Senior,-County.LongTermSenior,-County.Other.Exempt,
+                         -City.2nd.HEX,-City.Senior,-City.LongTermSenior,
+                         -City.Other.Exempt,-MillCode,-Land.Use,
+                         -Owner1,-Owner2,-Mailing.Address,-Mailing.City,
+                         -Mailing.State,-Mailing.Zip,-Mailing.Country)
 
-MiamiTrainingDF <- MiamiTrainingDF %>% st_transform('ESRI:102658')
+# Wrangle XF Columns
+MiamiDF<- mutate(MiamiDF,XFs=paste(XF1,XF2,XF3, sep=",")) %>%
+  dummy_cols(select_columns="XFs", split=",")
 
-Neighborhoods <- st_read("https://opendata.arcgis.com/datasets/2f54a0cbd67046f2bd100fb735176e6c_0.geojson")%>%
-  st_transform('ESRI:102658')
+MiamiDF <- st_as_sf(MiamiDF)
+
+# Join Neighborhood Data
+Neighborhoods <- st_read("https://opendata.arcgis.com/datasets/2f54a0cbd67046f2bd100fb735176e6c_0.geojson")
+
+Neighborhoods <- st_transform(Neighborhoods,'ESRI:102658')
+
+Municipality <- read.csv('https://opendata.arcgis.com/datasets/bd523e71861749959a7f12c9d0388d1c_0.geojson')
+
+Municipality <- st_transform(Municipality,'ESRI:102658')
+
+MiamiDF <- st_join(MiamiDF, Neighborhoods, join = st_intersects) 
+
+# Remove Challenge Houses
+
+MiamiDFKnown <- MiamiDF[!(MiamiDF$SalePrice==0),]
+
+# Map House Sales and Neighborhoods
+
+ggplot() +
+  geom_sf(data=Neighborhoods)+
+  geom_sf(data=MiamiDF)
+
+
+ggplot() +
+  geom_sf(data = Neighborhoods, fill = "grey40") +
+  geom_sf(data = MiamiDFKnown, aes(colour = q5(SalePrice)), 
+          show.legend = "point", size = 1) +
+  scale_colour_manual(values=palette5,
+                      labels=qBr(MiamiDFKnown,"SalePrice"),
+                      name="Quintile\nBreaks") +
+  labs(title="Sale Price, Miami") +
+  mapTheme()
+
+#Transit Data 
 
 metroStops <- st_read("https://opendata.arcgis.com/datasets/ee3e2c45427e4c85b751d8ad57dd7b16_0.geojson") 
 metroStops <- metroStops %>% st_transform('ESRI:102658')
@@ -114,7 +237,7 @@ metroStops <- metroStops %>% st_transform('ESRI:102658')
 # Plot of the metro stops
 ggplot() +
   geom_sf(data=Neighborhoods)+
-  geom_sf(data=MiamiTrainingDF)+
+  geom_sf(data=MiamiDFKnown)+
   geom_sf(data=metroStops, 
           aes(colour = 'red' ),
           show.legend = "point", size= 1.2)
@@ -141,7 +264,7 @@ buffer <- buffer %>% st_transform('ESRI:102658')
 # Clip the Miami training DF ... by seeing which tracts intersect (st_intersection)
 # with the buffer and clipping out only those areas
 clip <- 
-  st_intersection(buffer, MiamiTrainingDF) %>%
+  st_intersection(buffer, MiamiDFKnown) %>%
   dplyr::select(Folio) %>%
   mutate(Selection_Type = "Clip")
 
@@ -151,7 +274,7 @@ ggplot() +
 
 # Do a spatial selection to see which tracts touch the buffer
 selection <- 
-  MiamiTrainingDF[buffer,] %>%
+  MiamiDFKnown[buffer,] %>%
   dplyr::select(Folio) %>%
   mutate(Selection_Type = "Spatial Selection")
 
@@ -161,9 +284,9 @@ ggplot() +
   geom_sf(data = buffer, fill = "transparent", color = "red")
 
 selectCentroids <-
-  st_centroid(MiamiTrainingDF)[buffer,] %>%
+  st_centroid(MiamiDFKnown)[buffer,] %>%
   st_drop_geometry() %>%
-  left_join(dplyr::select(MiamiTrainingDF, Folio)) %>%
+  left_join(dplyr::select(MiamiDFKnown, Folio)) %>%
   st_sf() %>%
   dplyr::select(Folio) %>%
   mutate(Selection_Type = "Select by Centroids")
@@ -171,32 +294,48 @@ selectCentroids <-
 ggplot() +
   geom_sf(data = selectCentroids) +
   geom_sf(data = buffer, fill = "transparent", color = "red")+
-  labs(title="Selected Tracts with centroids in the buffer zone", 
-       subtitle="Bay Area, CA", 
-       caption="Figure 2.2") +
   theme(plot.title = element_text(size=22))
 
-MiamiTrainingDF.t <- 
+MiamiDFKnown <- 
   rbind(
-    st_centroid(MiamiTrainingDF)[buffer,] %>%
+    st_centroid(MiamiDFKnown)[buffer,] %>%
       st_drop_geometry() %>%
-      left_join(MiamiTrainingDF) %>%
+      left_join(MiamiDFKnown) %>%
       st_sf() %>%
       mutate(TOD = 1),
-    st_centroid(MiamiTrainingDF)[buffer, op = st_disjoint] %>%
+    st_centroid(MiamiDFKnown)[buffer, op = st_disjoint] %>%
       st_drop_geometry() %>%
-      left_join(MiamiTrainingDF) %>%
+      left_join(MiamiDFKnown) %>%
       st_sf() %>%
       mutate(TOD = 0))
 
-MiamiTrainingDF <- MiamiTrainingDF %>%
-  transform(TOD = ifelse(selection$Folio == MiamiTrainingDF$Folio,1,0))
+# Multiple Ring method
+
+#Creating the buffer around the transit stops
+MiamiDFKnown.rings <-
+  st_join(st_centroid(dplyr::select(MiamiDFKnown, Folio)), 
+          multipleRingBuffer(st_union(metroStops), 47520, 1320)) %>%
+  st_drop_geometry() %>%
+  left_join(dplyr::select(MiamiDFKnown, Folio, SalePrice), 
+            by=c("Folio"="Folio")) %>%
+  st_sf() %>%
+  mutate(Distance = distance / 5280) #convert to miles
+
+MiamiDFKnown <- st_join(MiamiDFKnown, MiamiDFKnown.rings, by = 'Folio')
+
+MiamiDFKnown <- 
+  MiamiDFKnown %>%
+  mutate(NewDistance.cat = case_when(
+    Distance >= 0 & Distance < 0.25  ~ "Quater Mile",
+    Distance >= 0.25 & Distance < 0.5  ~ "Half Mile",
+    Distance >= 0.5 & Distance < 0.75  ~ "Three Quater Mile",
+    Distance > 1                    ~ "More than one Mile"))
 
 # Correlation Matrix
 
 numericVars <- 
-  select_if(st_drop_geometry(MiamiTrainingDF.t), is.numeric) %>% na.omit() %>%
-  select(SalePrice,Bed, Bath, Stories, Units, YearBuilt, LivingSqFt, TOD)
+  select_if(st_drop_geometry(MiamiDFKnown), is.numeric) %>% na.omit() %>%
+  select(SalePrice.x,Bed, Bath, Stories, Units, YearBuilt, LivingSqFt, NewDistance.cat)
 
 ggcorrplot(
   round(cor(numericVars), 1), 
@@ -207,8 +346,14 @@ ggcorrplot(
   labs(title = "Correlation across numeric variables") 
 
 # Regression
-reg <- lm(SalePrice ~ ., data = st_drop_geometry(MiamiTrainingDF) %>% 
-            dplyr::select(SalePrice, Bed, Bath, Stories, YearBuilt,LivingSqFt))
+
+reg <- lm(SalePrice.x ~ ., data = st_drop_geometry(MiamiDFKnown) %>% 
+            dplyr::select(SalePrice.x, Bed, Bath, Stories, YearBuilt,LivingSqFt))
+summ(reg)
+summary(reg)
+
+reg <- lm(SalePrice.x ~ ., data = st_drop_geometry(MiamiDFKnown) %>% 
+            dplyr::select(SalePrice.x, Bed, Bath, Stories, YearBuilt,LivingSqFt, NewDistance.cat))
 summ(reg)
 summary(reg)
 
@@ -243,24 +388,24 @@ ggplot() +
   geom_sf(data=miami.base, fill="black") +
   geom_sf(data=bars, colour="red", size=.75)
 
-MiamiTrainingDF <- MiamiTrainingDF %>%
-  mutate(geomtry = st_centroid(MiamiTrainingDF))
+MiamiDFKnown <- MiamiDFKnown %>%
+  mutate(geomtry = st_centroid(MiamiDFKnown))
 
 ## Nearest Neighbor Feature
 st_c <- st_coordinates
 
-MiamiTrainingDF <-
-  MiamiTrainingDF %>% 
+MiamiDFKnown <-
+  MiamiDFKnown %>% 
   mutate(
-    bar_nn1 = nn_function(st_c(st_centroid(MiamiTrainingDF)), st_c(bars), 1),
-    bar_nn2 = nn_function(st_c(st_centroid(MiamiTrainingDF)), st_c(bars), 2), 
-    bar_nn3 = nn_function(st_c(st_centroid(MiamiTrainingDF)), st_c(bars), 3), 
-    bar_nn4 = nn_function(st_c(st_centroid(MiamiTrainingDF)), st_c(bars), 4), 
-    bar_nn5 = nn_function(st_c(st_centroid(MiamiTrainingDF)), st_c(bars), 5)) 
+    bar_nn1 = nn_function(st_c(st_centroid(MiamiDFKnown)), st_c(bars), 1),
+    bar_nn2 = nn_function(st_c(st_centroid(MiamiDFKnown)), st_c(bars), 5), 
+    bar_nn3 = nn_function(st_c(st_centroid(MiamiDFKnown)), st_c(bars), 10), 
+    bar_nn4 = nn_function(st_c(st_centroid(MiamiDFKnown)), st_c(bars), 15), 
+    bar_nn5 = nn_function(st_c(st_centroid(MiamiDFKnown)), st_c(bars), 20)) 
 
 ## bar cor
 st_drop_geometry(MiamiTrainingDF) %>% 
-  mutate(Age = 2015 - YearBuilt) %>%
+  mutate(Age = 2020 - YearBuilt) %>%
   dplyr::select(SalePrice, starts_with("bar_")) %>%
   filter(SalePrice <= 1000000) %>%
   gather(Variable, Value, -SalePrice) %>% 
@@ -275,7 +420,7 @@ st_drop_geometry(MiamiTrainingDF) %>%
 
 numericVars <- 
   select_if(st_drop_geometry(MiamiTrainingDF), is.numeric) %>% na.omit() %>%
-  select(SalePrice,Bed, Bath, Stories, Units, YearBuilt, LivingSqFt, bar_nn1, bar_nn2, bar_nn3, bar_nn4, bar_nn5)
+  select(SalePrice,Bed, Bath, Stories, Units, YearBuilt, LivingSqFt, NewDistance.cat, bar_nn1, bar_nn2, bar_nn3, bar_nn4, bar_nn5)
 
 ggcorrplot(
   round(cor(numericVars), 1), 
@@ -286,7 +431,29 @@ ggcorrplot(
   labs(title = "Correlation across numeric variables") 
 
 # Regression
-reg <- lm(SalePrice ~ ., data = st_drop_geometry(MiamiTrainingDF) %>% 
-            dplyr::select(SalePrice, Bed, Bath, Stories, YearBuilt,LivingSqFt, bar_nn1, bar_nn2, bar_nn3, bar_nn4, bar_nn5))
+reg <- lm(SalePrice.x ~ ., data = st_drop_geometry(MiamiDFKnown) %>% 
+            dplyr::select(SalePrice.x, Bed, Bath, Stories, YearBuilt,LivingSqFt, NewDistance.cat, bar_nn1, bar_nn2, bar_nn3, bar_nn4, bar_nn5))
 summ(reg)
 summary(reg)
+
+# multiple ring buffer - categorical indicator
+
+#Creating the buffer around the bars
+MiamiDFKnown.rings <-
+  st_join(st_centroid(dplyr::select(MiamiDFKnown, Folio.x)), 
+          multipleRingBuffer(st_union(bars), 47520, 1320)) %>%
+  st_drop_geometry() %>%
+  left_join(dplyr::select(MiamiDFKnown, Folio.x, SalePrice), 
+            by=c("Folio.x"="Folio.x")) %>%
+  st_sf() %>%
+  mutate(Distanceb = distance / 5280) #convert to miles
+
+MiamiDFKnown <- st_join(MiamiDFKnown, MiamiDFKnown.rings, by = 'Folio.x')
+
+MiamiDFKnown <- 
+  MiamiDFKnown %>%
+  mutate(Newbar.cat = case_when(
+    Distanceb >= 0 & Distanceb < 0.25  ~ "Quater Mile",
+    Distanceb >= 0.25 & Distanceb < 0.5  ~ "Half Mile",
+    Distanceb >= 0.5 & Distanceb < 0.75  ~ "Three Quater Mile",
+    Distanceb > 1                    ~ "More than one Mile"))
