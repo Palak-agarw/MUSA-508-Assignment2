@@ -16,6 +16,8 @@ library(kableExtra)
 library(rlist)
 library(dplyr)
 library(osmdata)
+library(geosphere)
+library(fastDummies)
 options(scipen=999)
 options(tigris_class = "sf")
 
@@ -201,7 +203,7 @@ Neighborhoods <- st_read("https://opendata.arcgis.com/datasets/2f54a0cbd67046f2b
 
 Neighborhoods <- st_transform(Neighborhoods,'ESRI:102658')
 
-Municipality <- read.csv('https://opendata.arcgis.com/datasets/bd523e71861749959a7f12c9d0388d1c_0.geojson')
+Municipality <- st_read('https://opendata.arcgis.com/datasets/bd523e71861749959a7f12c9d0388d1c_0.geojson')
 
 Municipality <- st_transform(Municipality,'ESRI:102658')
 
@@ -214,7 +216,7 @@ MiamiDFKnown <- MiamiDF[!(MiamiDF$SalePrice==0),]
 # Map House Sales and Neighborhoods
 
 ggplot() +
-  geom_sf(data=Neighborhoods)+
+  geom_sf(data=Municipality)+
   geom_sf(data=MiamiDF)
 
 
@@ -232,7 +234,6 @@ ggplot() +
 
 metroStops <- st_read("https://opendata.arcgis.com/datasets/ee3e2c45427e4c85b751d8ad57dd7b16_0.geojson") 
 metroStops <- metroStops %>% st_transform('ESRI:102658')
-
 
 # Plot of the metro stops
 ggplot() +
@@ -312,16 +313,13 @@ MiamiDFKnown <-
 # Multiple Ring method
 
 #Creating the buffer around the transit stops
-MiamiDFKnown.rings <-
-  st_join(st_centroid(dplyr::select(MiamiDFKnown, Folio)), 
+MiamiDFKnown <-
+  st_join(st_centroid(MiamiDFKnown), 
           multipleRingBuffer(st_union(metroStops), 47520, 1320)) %>%
   st_drop_geometry() %>%
-  left_join(dplyr::select(MiamiDFKnown, Folio, SalePrice), 
-            by=c("Folio"="Folio")) %>%
+  left_join(MiamiDFKnown) %>%
   st_sf() %>%
-  mutate(Distance = distance / 5280) #convert to miles
-
-MiamiDFKnown <- st_join(MiamiDFKnown, MiamiDFKnown.rings, by = 'Folio')
+  mutate(Distance = distance / 5280)#convert to miles
 
 MiamiDFKnown <- 
   MiamiDFKnown %>%
@@ -347,13 +345,8 @@ ggcorrplot(
 
 # Regression
 
-reg <- lm(SalePrice.x ~ ., data = st_drop_geometry(MiamiDFKnown) %>% 
-            dplyr::select(SalePrice.x, Bed, Bath, Stories, YearBuilt,LivingSqFt))
-summ(reg)
-summary(reg)
-
-reg <- lm(SalePrice.x ~ ., data = st_drop_geometry(MiamiDFKnown) %>% 
-            dplyr::select(SalePrice.x, Bed, Bath, Stories, YearBuilt,LivingSqFt, NewDistance.cat))
+reg <- lm(SalePrice ~ ., data = st_drop_geometry(MiamiDFKnown) %>% 
+            dplyr::select(SalePrice, Bed, Bath, Stories, YearBuilt,LivingSqFt, NewDistance.cat))
 summ(reg)
 summary(reg)
 
@@ -431,29 +424,220 @@ ggcorrplot(
   labs(title = "Correlation across numeric variables") 
 
 # Regression
-reg <- lm(SalePrice.x ~ ., data = st_drop_geometry(MiamiDFKnown) %>% 
-            dplyr::select(SalePrice.x, Bed, Bath, Stories, YearBuilt,LivingSqFt, NewDistance.cat, bar_nn1, bar_nn2, bar_nn3, bar_nn4, bar_nn5))
+reg <- lm(SalePrice ~ ., data = st_drop_geometry(MiamiDFKnown) %>% 
+            dplyr::select(SalePrice, Bed, Bath, Stories, YearBuilt,LivingSqFt, NewDistance.cat, bar_nn1, bar_nn2, bar_nn3, bar_nn4, bar_nn5))
 summ(reg)
 summary(reg)
 
-# multiple ring buffer - categorical indicator
+## Shoreline
+Shoreline <- st_read("https://opendata.arcgis.com/datasets/58386199cc234518822e5f34f65eb713_0.geojson")
+Shoreline<- st_transform(Shoreline,'ESRI:102658')
 
-#Creating the buffer around the bars
-MiamiDFKnown.rings <-
-  st_join(st_centroid(dplyr::select(MiamiDFKnown, Folio.x)), 
-          multipleRingBuffer(st_union(bars), 47520, 1320)) %>%
-  st_drop_geometry() %>%
-  left_join(dplyr::select(MiamiDFKnown, Folio.x, SalePrice), 
-            by=c("Folio.x"="Folio.x")) %>%
-  st_sf() %>%
-  mutate(Distanceb = distance / 5280) #convert to miles
+ggplot() +
+  geom_sf(data = Neighborhoods, fill = "grey40") +
+  geom_sf(data = Shoreline, color = "blue")
 
-MiamiDFKnown <- st_join(MiamiDFKnown, MiamiDFKnown.rings, by = 'Folio.x')
+MiamiDFKnown <- MiamiDFKnown %>%
+  mutate(distancetoshore= (st_distance(st_centroid(MiamiDFKnown), Shoreline) / 5280))
 
-MiamiDFKnown <- 
-  MiamiDFKnown %>%
-  mutate(Newbar.cat = case_when(
-    Distanceb >= 0 & Distanceb < 0.25  ~ "Quater Mile",
-    Distanceb >= 0.25 & Distanceb < 0.5  ~ "Half Mile",
-    Distanceb >= 0.5 & Distanceb < 0.75  ~ "Three Quater Mile",
-    Distanceb > 1                    ~ "More than one Mile"))
+MiamiDFKnown <- MiamiDFKnown %>%
+  mutate(distancetoshore= dist.mat <- geosphere::dist2Line(p = Shoreline , line = MiamiDFKnown))
+
+
+MiamiDFKnown <- units::drop_units(MiamiDFKnown)
+
+MiamiDFKnown <- MiamiDFKnown %>%
+  mutate(Distancetoshore= as.numeric(distancetoshore))
+
+
+#Coastline Data
+Coastline<-opq(bbox = c(xmin, ymin, xmax, ymax)) %>% 
+  add_osm_feature("natural", "coastline") %>%
+  osmdata_sf()
+
+MiamiDFKnown <- st_transform(MiamiDFKnown,'ESRI:37001' )
+
+#add to MiamiDFKnown and convert to miles
+MiamiDFKnown <-
+  MiamiDFKnown %>%  
+  mutate(CoastDist=(geosphere::dist2Line(p=st_coordinates(st_centroid(MiamiDFKnown)),
+                                         line=st_coordinates(Coastline$osm_lines)[,1:2])*0.00062137)[,1])
+
+MiamiDFKnown <- st_transform(MiamiDFKnown,'ESRI:102658' )
+
+## Something weird going on with this regression
+reg <- lm(SalePrice ~ ., data = st_drop_geometry(MiamiDFKnown) %>% 
+                     dplyr::select(SalePrice, Bed, Bath, Stories, YearBuilt,LivingSqFt, NewDistance.cat, 
+                                   bar_nn1, bar_nn2, bar_nn3, bar_nn4, bar_nn5, CoastDist))
+summ(reg)
+summary(reg)
+
+# School Attendance Areas
+## Elementary Schools
+## Doesn't include Miami Beach
+## Something is wrong with projection
+ElementarySchool <- st_read("https://opendata.arcgis.com/datasets/19f5d8dcd9714e6fbd9043ac7a50c6f6_0.geojson")
+
+ElementarySchool<- st_transform(ElementarySchool,'ESRI:102658') %>%
+  select(-FID,-ID,-ZIPCODE,-PHONE,-REGION,-ID2,-FLAG,-CREATEDBY,-CREATEDDATE,-MODIFIEDBY,-MODIFIEDDATE)
+
+ElementarySchool<-filter(ElementarySchool, CITY == "Miami"| CITY == "MiamiBeach")
+
+ggplot() +
+  geom_sf(data = ElementarySchool, fill = "grey40") +
+  geom_sf(data = MiamiDF)+
+  geom_sf(data = Neighborhoods)
+
+## Middle Schools
+MiddleSchool <- st_read("https://opendata.arcgis.com/datasets/dd2719ff6105463187197165a9c8dd5c_0.geojson")
+
+MiddleSchool<- st_transform(MiddleSchool,'ESRI:102658') %>%
+  select(-FID,-ID,-ZIPCODE,-PHONE,-REGION,-ID2,-CREATEDBY,-CREATEDDATE,-MODIFIEDBY,-MODIFIEDDATE)
+
+MiddleSchool<-filter(MiddleSchool, CITY == "Miami"| CITY == "MiamiBeach")
+
+ggplot() +
+  geom_sf(data = MiddleSchool, fill = "grey40") +
+  geom_sf(data = MiamiDF)
+
+
+## High Schools
+HighSchool <- st_read("https://opendata.arcgis.com/datasets/9004dbf5f7f645d493bfb6b875a43dc1_0.geojson")
+
+HighSchool<- st_transform(HighSchool,'ESRI:102658') %>%
+  select(-FID,-ID,-ZIPCODE,-PHONE,-REGION,-ID2,-CREATEDBY,-CREATEDDATE,-MODIFIEDBY,-MODIFIEDDATE)
+
+HighSchool<-filter(HighSchool, CITY == "Miami"| CITY == "MiamiBeach")
+
+ggplot() +
+  geom_sf(data = HighSchool, fill = "grey40") +
+  geom_sf(data = MiamiDF) +
+  geom_sf(data = Neighborhoods)
+
+ElementarySchool['Elementary'] <- "Elementary"
+MiddleSchool['Middle'] <- "Middle"
+HighSchool['High']<-"High"
+
+ElementarySchool <- ElementarySchool %>% 
+  select(-NAME,-ADDRESS,-CITY,-GRADES,-DISPLAYNAME,-SHAPE_Length,-SHAPE_Area,-geometry)
+
+MiddleSchool <- MiddleSchool %>% 
+  select(-NAME,-ADDRESS,-CITY,-GRADES,-DISPLAYNAME,-SHAPE_Length,-SHAPE_Area,-geometry)
+
+HighSchool <- HighSchool %>% 
+  select(-NAME,-ADDRESS,-CITY,-GRADES,-DISPLAYNAME,-SHAPE_Length,-SHAPE_Area,-geometry)
+
+MiamiDFKnown <- st_join(MiamiDFKnown, ElementarySchool, join = st_intersects) 
+MiamiDFKnown <- st_join(MiamiDFKnown, MiddleSchool, join = st_intersects) 
+MiamiDFKnown <- st_join(MiamiDFKnown, HighSchool, join = st_intersects) 
+
+MiamiDFKnown['AllSchool'] <-  paste(MiamiDFKnown$ELemantary, MiamiDFKnown$Middle, MiamiDFKnown$High, sep =',')
+
+reg <- lm(SalePrice ~ ., data = st_drop_geometry(MiamiDFKnown) %>%
+                     dplyr::select(SalePrice, Bed, Bath, Stories, YearBuilt,LivingSqFt, NewDistance.cat, bar_nn1, bar_nn2, bar_nn3, bar_nn4, 
+                                   bar_nn5, CoastDist, AllSchool))
+summ(reg)
+summary(reg)
+
+## Parks 
+
+Parks <- st_read("https://opendata.arcgis.com/datasets/8c9528d3e1824db3b14ed53188a46291_0.geojson")
+
+Parks <- st_transform(Parks,'ESRI:102658')
+
+MiamiDFKnown <-
+  MiamiDFKnown %>% 
+  mutate(
+    park_nn1 = nn_function(st_c(st_centroid(MiamiDFKnown)), st_c(Parks), 1),
+    park_nn2 = nn_function(st_c(st_centroid(MiamiDFKnown)), st_c(Parks), 3), 
+    park_nn3 = nn_function(st_c(st_centroid(MiamiDFKnown)), st_c(Parks), 4), 
+    park_nn4 = nn_function(st_c(st_centroid(MiamiDFKnown)), st_c(Parks), 5), 
+    park_nn5 = nn_function(st_c(st_centroid(MiamiDFKnown)), st_c(Parks), 10)) 
+
+reg <- lm(SalePrice ~ ., data = st_drop_geometry(MiamiDFKnown) %>%
+            dplyr::select(SalePrice, Bed, Bath, Stories, YearBuilt,LivingSqFt, NewDistance.cat, bar_nn1, bar_nn2, bar_nn3, bar_nn4, 
+                          bar_nn5, CoastDist, AllSchool, park_nn1, park_nn2, park_nn3, park_nn4, park_nn5 ))
+summ(reg)
+summary(reg)
+
+## Place of worship
+
+worship <- opq(bbox = c(xmin, ymin, xmax, ymax)) %>% 
+  add_osm_feature(key = 'amenity', value = c("place_of_worship")) %>%
+  osmdata_sf()
+
+worship <- 
+  worship$osm_points %>%
+  .[miami.base,]
+
+worship <- worship %>% st_transform('ESRI:102658')
+
+ggplot() +
+  geom_sf(data=miami.base, fill="black") +
+  geom_sf(data=worship, colour="red", size=.75)
+
+MiamiDFKnown <-
+  MiamiDFKnown %>% 
+  mutate(
+    worship_nn1 = nn_function(st_c(st_centroid(MiamiDFKnown)), st_c(worship), 1),
+    worship_nn2 = nn_function(st_c(st_centroid(MiamiDFKnown)), st_c(worship), 2), 
+    worship_nn3 = nn_function(st_c(st_centroid(MiamiDFKnown)), st_c(worship), 10)) 
+
+reg <- lm(SalePrice ~ ., data = st_drop_geometry(MiamiDFKnown) %>%
+            dplyr::select(SalePrice, Bed, Bath, Stories, YearBuilt,LivingSqFt, NewDistance.cat, bar_nn1, bar_nn2, bar_nn3, bar_nn4, 
+                          bar_nn5, CoastDist, AllSchool, park_nn1, park_nn2, park_nn3, park_nn4, park_nn5, worship_nn1, worship_nn2, worship_nn3))
+summ(reg)
+summary(reg)
+
+## Parking
+
+parking <- opq(bbox = c(xmin, ymin, xmax, ymax)) %>% 
+  add_osm_feature(key = 'amenity', value = c("parking", "parking_space")) %>%
+  osmdata_sf()
+
+parking <- 
+  parking$osm_points %>%
+  .[miami.base,]
+
+parking <- parking %>% st_transform('ESRI:102658')
+
+ggplot() +
+  geom_sf(data=miami.base, fill="black") +
+  geom_sf(data=parking, colour="red", size=.75)
+
+MiamiDFKnown <-
+  MiamiDFKnown %>% 
+  mutate(
+    parking_nn1 = nn_function(st_c(st_centroid(MiamiDFKnown)), st_c(parking), 1),
+    parking_nn2 = nn_function(st_c(st_centroid(MiamiDFKnown)), st_c(parking), 5), 
+    parking_nn3 = nn_function(st_c(st_centroid(MiamiDFKnown)), st_c(parking), 10)) 
+
+reg <- lm(SalePrice ~ ., data = st_drop_geometry(MiamiDFKnown) %>%
+            dplyr::select(SalePrice, Bed, Bath, Stories, YearBuilt,LivingSqFt, NewDistance.cat, bar_nn1, bar_nn2, bar_nn3, bar_nn4, 
+                          bar_nn5, CoastDist, AllSchool, park_nn1, park_nn2, park_nn3, park_nn4, park_nn5, worship_nn1, worship_nn2,
+                          worship_nn3, parking_nn1, parking_nn2, parking_nn3))
+summ(reg)
+summary(reg)
+
+## Work centers
+                  
+landuse <- st_read("https://opendata.arcgis.com/datasets/244e956692d442c3beaa8a89259e3bd9_0.geojson")
+landuse <- st_transform(landuse,'ESRI:102658')
+
+office <- filter(landuse, DESCR == "Office Building.")
+
+MiamiDFKnown <-
+  MiamiDFKnown %>% 
+  mutate(
+    office_nn1 = nn_function(st_c(st_centroid(MiamiDFKnown)), st_c(st_centroid(office)), 1),
+    office_nn2 = nn_function(st_c(st_centroid(MiamiDFKnown)), st_c(st_centroid(office)), 5), 
+    office_nn3 = nn_function(st_c(st_centroid(MiamiDFKnown)), st_c(st_centroid(office)), 10)) 
+
+reg <- lm(SalePrice ~ ., data = st_drop_geometry(MiamiDFKnown) %>%
+            dplyr::select(SalePrice, Bed, Bath, Stories, YearBuilt,LivingSqFt, NewDistance.cat, bar_nn1, bar_nn2, bar_nn3, bar_nn4, 
+                          bar_nn5, CoastDist, AllSchool, park_nn1, park_nn2, park_nn3, park_nn4, park_nn5, worship_nn1, worship_nn2, 
+                          worship_nn3, parking_nn1, parking_nn2, parking_nn3, office_nn1, office_nn2, office_nn3, CoastDist))
+summ(reg)
+summary(reg)
+
+
