@@ -14,6 +14,7 @@ library(fastDummies)
 
 options(scipen=999)
 options(tigris_class = "sf")
+
 # Themes and Functions
 mapTheme <- function(base_size = 12) {
   theme(
