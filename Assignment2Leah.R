@@ -12,8 +12,6 @@ library(jtools)
 library(viridis)
 library(fastDummies)
 
-options(scipen=999)
-options(tigris_class = "sf")
 
 # Themes and Functions
 mapTheme <- function(base_size = 12) {
@@ -143,26 +141,10 @@ ggcorrplot(
   labs(title = "Correlation across numeric variables") 
 
 # Regression
-reg <- lm(SalePrice ~ ., data = st_drop_geometry(MiamiDFKnown) %>% 
+reg <- lm(SalePrice ~ ., data = st_drop_geometry(MiamiTrainingDF) %>% 
              dplyr::select(SalePrice, Bed, Bath, Stories, YearBuilt,LivingSqFt))
 summ(reg)
 summary(reg)
-
-## Regression with Neighborhoods
-
-reg2 <-lm(SalePrice ~ ., data = st_drop_geometry(MiamiDFKnown) %>% 
-            dplyr::select(SalePrice, Bed, Bath, Stories, YearBuilt,LivingSqFt,LABEL))
-summ(reg2)
-summary(reg2)
-
-## Creating Year Built Categories
-MiamiDFKnown$YearCat <- cut(MiamiDFKnown$YearBuilt, c(1900,1909,1919,1929,1939,1949,
-                                                     1959,1969,1979,1989,1999,2009,2019))
-
-reg3 <-lm(SalePrice ~ ., data = st_drop_geometry(MiamiDFKnown) %>% 
-            dplyr::select(SalePrice, Bed, Bath, Stories, YearCat,LivingSqFt,LABEL))
-summ(reg3)
-summary(reg3)
 
 #Adding Spatial Features
 ## Beaches
