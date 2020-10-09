@@ -207,7 +207,12 @@ Municipality <- st_read('https://opendata.arcgis.com/datasets/bd523e71861749959a
 
 Municipality <- st_transform(Municipality,'ESRI:102658')
 
+MiamiBeach <- filter(Municipality, NAME == "MIAMI BEACH")
+
 MiamiDF <- st_join(MiamiDF, Neighborhoods, join = st_intersects) 
+MiamiDF <- st_join(MiamiDF, MiamiBeach, join = st_intersects) 
+
+common <- st_join(Neighborhoods, MiamiBeach)
 
 # Remove Challenge Houses
 
@@ -216,7 +221,8 @@ MiamiDFKnown <- MiamiDF[!(MiamiDF$SalePrice==0),]
 # Map House Sales and Neighborhoods
 
 ggplot() +
-  geom_sf(data=Municipality)+
+  geom_sf(data=MiamiBeach)+
+  geom_sf(data=Neighborhoods)+
   geom_sf(data=MiamiDF)
 
 
