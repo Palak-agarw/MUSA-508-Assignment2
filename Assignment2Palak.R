@@ -198,6 +198,28 @@ MiamiDF<- mutate(MiamiDF,XFs=paste(XF1,XF2,XF3, sep=",")) %>%
 
 MiamiDF <- st_as_sf(MiamiDF)
 
+MiamiDF$LuxuryPool<- ifelse(MiamiDF$`XFs_Luxury Pool - Best`==1 | MiamiDF$`XFs_Luxury Pool - Better`==1 | MiamiDF$`XFs_Luxury Pool - Good.`==1,1,0)
+
+MiamiDF$'3to6ftPool' <- ifelse(MiamiDF$`XFs_Pool COMM AVG 3-6' dpth`==1|MiamiDF$`XFs_Pool COMM BETTER 3-6' dpth`==1,1,0)
+
+MiamiDF$'3to8ftPool' <- ifelse(MiamiDF$`XFs_Pool 6' res BETTER 3-8' dpth`==1|MiamiDF$`XFs_Pool 6' res AVG 3-8' dpth`==1,1,0)
+
+MiamiDF <- rename(MiamiDF,`8ftres3to8ftPool`=`XFs_Pool 8' res BETTER 3-8' dpth`)
+
+MiamiDF <- rename(MiamiDF, Whirpool=`XFs_Whirlpool - Attached to Pool (whirlpool area only)`)
+
+MiamiDF <- rename(MiamiDF,`2to4ftPool`= `XFs_Pool - Wading - 2-4' depth`)
+
+MiamiDF <- select(MiamiDF,-"XFs_Pool 6' res BETTER 3-8' dpth",
+                  -"XFs_Pool 6' res AVG 3-8' dpth",-"XFs_Luxury Pool - Best",
+                  -"XFs_Luxury Pool - Better",-"XFs_Luxury Pool - Good.",
+                  -"XFs_Pool COMM AVG 3-6' dpth",-"XFs_Pool COMM BETTER 3-6' dpth",
+                  -"XFs_large",-"XFs_elec",-"XFs_plumb",-"XFs_Tiki Hut - Standard Thatch roof w/poles",
+                  -"XFs_Tiki Hut - Good Thatch roof w/poles & electric",-"XFs_Tiki Hut - Better Thatch roof",
+                  -"XFs_Bomb Shelter - Concrete Block",-"XFs_Tennis Court - Asphalt or Clay" ) 
+
+MiamiDF <- st_as_sf(MiamiDF)
+
 # Join Neighborhood Data
 Neighborhoods <- st_read("https://opendata.arcgis.com/datasets/2f54a0cbd67046f2bd100fb735176e6c_0.geojson")
 
@@ -209,10 +231,20 @@ Municipality <- st_transform(Municipality,'ESRI:102658')
 
 MiamiBeach <- filter(Municipality, NAME == "MIAMI BEACH")
 
-MiamiDF <- st_join(MiamiDF, Neighborhoods, join = st_intersects) 
-MiamiDF <- st_join(MiamiDF, MiamiBeach, join = st_intersects) 
+Neighborhoods <- Neighborhoods %>%
+  rename( Neighbourhood_name = LABEL)
 
-common <- st_join(Neighborhoods, MiamiBeach)
+Neighborhoods <- Neighborhoods %>% select(-FID,-Shape_STAr,-Shape_STLe,-Shape__Area,-Shape__Length)
+
+Municipality <- Municipality %>%
+  rename( Neighbourhood_name = NAME) 
+  
+Municipality <- Municipality %>% select(-FID,-MUNICUID,-MUNICUID,-FIPSCODE,-CREATEDBY, -CREATEDDATE, -MODIFIEDBY, 
+                                        -MODIFIEDDATE, -SHAPE_Area, -SHAPE_Length, -MUNICID)
+
+Neighborhoods <- rbind(Neighborhoods, Municipality)
+
+MiamiDF <- st_join(MiamiDF, Neighborhoods, join = st_intersects) 
 
 # Remove Challenge Houses
 
@@ -221,7 +253,6 @@ MiamiDFKnown <- MiamiDF[!(MiamiDF$SalePrice==0),]
 # Map House Sales and Neighborhoods
 
 ggplot() +
-  geom_sf(data=MiamiBeach)+
   geom_sf(data=Neighborhoods)+
   geom_sf(data=MiamiDF)
 
@@ -236,11 +267,66 @@ ggplot() +
   labs(title="Sale Price, Miami") +
   mapTheme()
 
+# Correlation Matrices
+numericVars <- 
+  select_if(st_drop_geometry(MiamiDFKnown), is.numeric) %>% na.omit() %>%
+  select(SalePrice, Land, Bldg, Total, Assessed, City.Taxable, AdjustedSqFt,
+         LotSize, Bed, Bath, Stories, Units, YearBuilt, EffectiveYearBuilt,
+         LivingSqFt, ActualSqFt)
+
+ggcorrplot(
+  round(cor(numericVars), 1), 
+  p.mat = cor_pmat(numericVars),
+  colors = c("#25CB10", "white", "#FA7800"),
+  type="lower",
+  insig = "blank") +  
+  labs(title = "Correlation across numeric variables") 
+
+dummyVars <- select_if(st_drop_geometry(MiamiDFKnown), is.numeric) %>% 
+  na.omit() %>% select("SalePrice", "3to8ftPool",
+                       "3to6ftPool","LuxuryPool",
+                       "8ftres3to8ftPool",
+                       "Whirpool","2to4ftPool",
+                       "XFs_Central A/C (Aprox 400 sqft/Ton)")
+
+ggcorrplot(
+  round(cor(dummyVars), 1), 
+  p.mat = cor_pmat(dummyVars),
+  colors = c("#25CB10", "white", "#FA7800"),
+  type="lower",
+  insig = "blank") +  
+  labs(title = "Correlation across XF variables")   
+
+# Regression Adj R-squared=..699
+reg <- lm(SalePrice ~ ., data = st_drop_geometry(MiamiDFKnown) %>% 
+            dplyr::select(SalePrice, Bed, Bath, Stories, YearBuilt,LivingSqFt))
+summ(reg)
+summary(reg)
+
+## Regression with Neighborhoods Adj R-squared=.7173
+reg2 <-lm(SalePrice ~ ., data = st_drop_geometry(MiamiDFKnown) %>% 
+            dplyr::select(SalePrice, Bed, Bath, Stories, YearBuilt,LivingSqFt,Neighbourhood_name))
+summ(reg2)
+summary(reg2)
+
+# Creating Year Built Categories A rsquared=.7245
+## Need to move this code before split
+MiamiDFKnown$YearCat <- cut(MiamiDFKnown$YearBuilt, c(1900,1909,1919,1929,1939,1949,
+                                                      1959,1969,1979,1989,1999,2009,2019))
+
+reg3 <-lm(SalePrice ~ ., data = st_drop_geometry(MiamiDFKnown) %>% 
+            dplyr::select(SalePrice, Bed, Bath, Stories, YearCat,LivingSqFt,Neighbourhood_name))
+summ(reg3)
+summary(reg3)
+
+
 #Transit Data 
 
 metroStops <- st_read("https://opendata.arcgis.com/datasets/ee3e2c45427e4c85b751d8ad57dd7b16_0.geojson") 
 metroStops <- metroStops %>% st_transform('ESRI:102658')
 
+
+## Buffer method - not preferred
 # Plot of the metro stops
 ggplot() +
   geom_sf(data=Neighborhoods)+
@@ -335,24 +421,10 @@ MiamiDFKnown <-
     Distance >= 0.5 & Distance < 0.75  ~ "Three Quater Mile",
     Distance > 1                    ~ "More than one Mile"))
 
-# Correlation Matrix
-
-numericVars <- 
-  select_if(st_drop_geometry(MiamiDFKnown), is.numeric) %>% na.omit() %>%
-  select(SalePrice.x,Bed, Bath, Stories, Units, YearBuilt, LivingSqFt, NewDistance.cat)
-
-ggcorrplot(
-  round(cor(numericVars), 1), 
-  p.mat = cor_pmat(numericVars),
-  colors = c("#25CB10", "white", "#FA7800"),
-  type="lower",
-  insig = "blank") +  
-  labs(title = "Correlation across numeric variables") 
-
-# Regression
+# Regression R-sq = .7425
 
 reg <- lm(SalePrice ~ ., data = st_drop_geometry(MiamiDFKnown) %>% 
-            dplyr::select(SalePrice, Bed, Bath, Stories, YearBuilt,LivingSqFt, NewDistance.cat))
+            dplyr::select(SalePrice, Bed, Bath, Stories, YearCat,LivingSqFt, Neighbourhood_name, NewDistance.cat))
 summ(reg)
 summary(reg)
 
@@ -387,8 +459,6 @@ ggplot() +
   geom_sf(data=miami.base, fill="black") +
   geom_sf(data=bars, colour="red", size=.75)
 
-MiamiDFKnown <- MiamiDFKnown %>%
-  mutate(geomtry = st_centroid(MiamiDFKnown))
 
 ## Nearest Neighbor Feature
 st_c <- st_coordinates
@@ -402,59 +472,14 @@ MiamiDFKnown <-
     bar_nn4 = nn_function(st_c(st_centroid(MiamiDFKnown)), st_c(bars), 15), 
     bar_nn5 = nn_function(st_c(st_centroid(MiamiDFKnown)), st_c(bars), 20)) 
 
-## bar cor
-st_drop_geometry(MiamiTrainingDF) %>% 
-  mutate(Age = 2020 - YearBuilt) %>%
-  dplyr::select(SalePrice, starts_with("bar_")) %>%
-  filter(SalePrice <= 1000000) %>%
-  gather(Variable, Value, -SalePrice) %>% 
-  ggplot(aes(Value, SalePrice)) +
-  geom_point(size = .5) + geom_smooth(method = "lm", se=F, colour = "#FA7800") +
-  facet_wrap(~Variable, nrow = 1, scales = "free") +
-  labs(title = "Price as a function of continuous variables") +
-  plotTheme()
-
-
-# Correlation Matrix
-
-numericVars <- 
-  select_if(st_drop_geometry(MiamiTrainingDF), is.numeric) %>% na.omit() %>%
-  select(SalePrice,Bed, Bath, Stories, Units, YearBuilt, LivingSqFt, NewDistance.cat, bar_nn1, bar_nn2, bar_nn3, bar_nn4, bar_nn5)
-
-ggcorrplot(
-  round(cor(numericVars), 1), 
-  p.mat = cor_pmat(numericVars),
-  colors = c("#25CB10", "white", "#FA7800"),
-  type="lower",
-  insig = "blank") +  
-  labs(title = "Correlation across numeric variables") 
-
-# Regression
+# Regression R-sq = .7438
 reg <- lm(SalePrice ~ ., data = st_drop_geometry(MiamiDFKnown) %>% 
-            dplyr::select(SalePrice, Bed, Bath, Stories, YearBuilt,LivingSqFt, NewDistance.cat, bar_nn1, bar_nn2, bar_nn3, bar_nn4, bar_nn5))
+            dplyr::select(SalePrice, Bed, Bath, Stories, YearCat,LivingSqFt, Neighbourhood_name,
+                          NewDistance.cat, bar_nn1, bar_nn2, bar_nn3, bar_nn4, bar_nn5))
 summ(reg)
 summary(reg)
 
 ## Shoreline
-Shoreline <- st_read("https://opendata.arcgis.com/datasets/58386199cc234518822e5f34f65eb713_0.geojson")
-Shoreline<- st_transform(Shoreline,'ESRI:102658')
-
-ggplot() +
-  geom_sf(data = Neighborhoods, fill = "grey40") +
-  geom_sf(data = Shoreline, color = "blue")
-
-MiamiDFKnown <- MiamiDFKnown %>%
-  mutate(distancetoshore= (st_distance(st_centroid(MiamiDFKnown), Shoreline) / 5280))
-
-MiamiDFKnown <- MiamiDFKnown %>%
-  mutate(distancetoshore= dist.mat <- geosphere::dist2Line(p = Shoreline , line = MiamiDFKnown))
-
-
-MiamiDFKnown <- units::drop_units(MiamiDFKnown)
-
-MiamiDFKnown <- MiamiDFKnown %>%
-  mutate(Distancetoshore= as.numeric(distancetoshore))
-
 
 #Coastline Data
 Coastline<-opq(bbox = c(xmin, ymin, xmax, ymax)) %>% 
@@ -471,10 +496,10 @@ MiamiDFKnown <-
 
 MiamiDFKnown <- st_transform(MiamiDFKnown,'ESRI:102658' )
 
-## Something weird going on with this regression
+## Regression R-sq = .7451
 reg <- lm(SalePrice ~ ., data = st_drop_geometry(MiamiDFKnown) %>% 
-                     dplyr::select(SalePrice, Bed, Bath, Stories, YearBuilt,LivingSqFt, NewDistance.cat, 
-                                   bar_nn1, bar_nn2, bar_nn3, bar_nn4, bar_nn5, CoastDist))
+                     dplyr::select(SalePrice, Bed, Bath, Stories, YearCat,LivingSqFt, Neighbourhood_name, 
+                                   NewDistance.cat, bar_nn1, bar_nn2, bar_nn3, bar_nn4, bar_nn5, CoastDist))
 summ(reg)
 summary(reg)
 
@@ -525,23 +550,23 @@ MiddleSchool['Middle'] <- "Middle"
 HighSchool['High']<-"High"
 
 ElementarySchool <- ElementarySchool %>% 
-  select(-NAME,-ADDRESS,-CITY,-GRADES,-DISPLAYNAME,-SHAPE_Length,-SHAPE_Area,-geometry)
+  select(-ADDRESS,-CITY,-GRADES,-DISPLAYNAME,-SHAPE_Length,-SHAPE_Area)
 
 MiddleSchool <- MiddleSchool %>% 
-  select(-NAME,-ADDRESS,-CITY,-GRADES,-DISPLAYNAME,-SHAPE_Length,-SHAPE_Area,-geometry)
+  select(-ADDRESS,-CITY,-GRADES,-DISPLAYNAME,-SHAPE_Length,-SHAPE_Area)
 
 HighSchool <- HighSchool %>% 
-  select(-NAME,-ADDRESS,-CITY,-GRADES,-DISPLAYNAME,-SHAPE_Length,-SHAPE_Area,-geometry)
+  select(-ADDRESS,-CITY,-GRADES,-DISPLAYNAME,-SHAPE_Length,-SHAPE_Area)
 
 MiamiDFKnown <- st_join(MiamiDFKnown, ElementarySchool, join = st_intersects) 
 MiamiDFKnown <- st_join(MiamiDFKnown, MiddleSchool, join = st_intersects) 
 MiamiDFKnown <- st_join(MiamiDFKnown, HighSchool, join = st_intersects) 
 
-MiamiDFKnown['AllSchool'] <-  paste(MiamiDFKnown$ELemantary, MiamiDFKnown$Middle, MiamiDFKnown$High, sep =',')
+# Regression R-sq = .6297
 
 reg <- lm(SalePrice ~ ., data = st_drop_geometry(MiamiDFKnown) %>%
-                     dplyr::select(SalePrice, Bed, Bath, Stories, YearBuilt,LivingSqFt, NewDistance.cat, bar_nn1, bar_nn2, bar_nn3, bar_nn4, 
-                                   bar_nn5, CoastDist, AllSchool))
+                     dplyr::select(SalePrice, Bed, Bath, Stories, YearCat,LivingSqFt,Neighbourhood_name, NewDistance.cat, bar_nn1, 
+                                   bar_nn2, bar_nn3, bar_nn4,bar_nn5, CoastDist, NAME.x.1, NAME.x, NAME.y))
 summ(reg)
 summary(reg)
 
@@ -560,9 +585,11 @@ MiamiDFKnown <-
     park_nn4 = nn_function(st_c(st_centroid(MiamiDFKnown)), st_c(Parks), 5), 
     park_nn5 = nn_function(st_c(st_centroid(MiamiDFKnown)), st_c(Parks), 10)) 
 
+# Regression R-sq = .7482
+
 reg <- lm(SalePrice ~ ., data = st_drop_geometry(MiamiDFKnown) %>%
-            dplyr::select(SalePrice, Bed, Bath, Stories, YearBuilt,LivingSqFt, NewDistance.cat, bar_nn1, bar_nn2, bar_nn3, bar_nn4, 
-                          bar_nn5, CoastDist, AllSchool, park_nn1, park_nn2, park_nn3, park_nn4, park_nn5 ))
+            dplyr::select(SalePrice, Bed, Bath, Stories, YearCat,LivingSqFt,Neighbourhood_name, 
+                          NewDistance.cat, bar_nn1, bar_nn2, bar_nn3, bar_nn4, bar_nn5, CoastDist, park_nn1, park_nn2, park_nn3, park_nn4, park_nn5 ))
 summ(reg)
 summary(reg)
 
@@ -589,9 +616,11 @@ MiamiDFKnown <-
     worship_nn2 = nn_function(st_c(st_centroid(MiamiDFKnown)), st_c(worship), 2), 
     worship_nn3 = nn_function(st_c(st_centroid(MiamiDFKnown)), st_c(worship), 10)) 
 
+# Regression R-sq = .7486
 reg <- lm(SalePrice ~ ., data = st_drop_geometry(MiamiDFKnown) %>%
-            dplyr::select(SalePrice, Bed, Bath, Stories, YearBuilt,LivingSqFt, NewDistance.cat, bar_nn1, bar_nn2, bar_nn3, bar_nn4, 
-                          bar_nn5, CoastDist, AllSchool, park_nn1, park_nn2, park_nn3, park_nn4, park_nn5, worship_nn1, worship_nn2, worship_nn3))
+            dplyr::select(SalePrice, Bed, Bath, Stories, YearCat,LivingSqFt, NewDistance.cat, bar_nn1, bar_nn2, bar_nn3, bar_nn4, 
+                          bar_nn5, CoastDist, park_nn1, park_nn2, park_nn3, park_nn4, park_nn5, worship_nn1, worship_nn2, 
+                          worship_nn3, Neighbourhood_name))
 summ(reg)
 summary(reg)
 
@@ -618,9 +647,10 @@ MiamiDFKnown <-
     parking_nn2 = nn_function(st_c(st_centroid(MiamiDFKnown)), st_c(parking), 5), 
     parking_nn3 = nn_function(st_c(st_centroid(MiamiDFKnown)), st_c(parking), 10)) 
 
+# Regression R-sq = .7487
 reg <- lm(SalePrice ~ ., data = st_drop_geometry(MiamiDFKnown) %>%
-            dplyr::select(SalePrice, Bed, Bath, Stories, YearBuilt,LivingSqFt, NewDistance.cat, bar_nn1, bar_nn2, bar_nn3, bar_nn4, 
-                          bar_nn5, CoastDist, AllSchool, park_nn1, park_nn2, park_nn3, park_nn4, park_nn5, worship_nn1, worship_nn2,
+            dplyr::select(SalePrice, Bed, Bath, Stories, YearCat,LivingSqFt, NewDistance.cat, bar_nn1, bar_nn2, bar_nn3, bar_nn4, 
+                          bar_nn5, CoastDist, Neighbourhood_name, park_nn1, park_nn2, park_nn3, park_nn4, park_nn5, worship_nn1, worship_nn2,
                           worship_nn3, parking_nn1, parking_nn2, parking_nn3))
 summ(reg)
 summary(reg)
@@ -639,11 +669,129 @@ MiamiDFKnown <-
     office_nn2 = nn_function(st_c(st_centroid(MiamiDFKnown)), st_c(st_centroid(office)), 5), 
     office_nn3 = nn_function(st_c(st_centroid(MiamiDFKnown)), st_c(st_centroid(office)), 10)) 
 
+# regression R-sq = .7508
+
 reg <- lm(SalePrice ~ ., data = st_drop_geometry(MiamiDFKnown) %>%
-            dplyr::select(SalePrice, Bed, Bath, Stories, YearBuilt,LivingSqFt, NewDistance.cat, bar_nn1, bar_nn2, bar_nn3, bar_nn4, 
-                          bar_nn5, CoastDist, AllSchool, park_nn1, park_nn2, park_nn3, park_nn4, park_nn5, worship_nn1, worship_nn2, 
+            dplyr::select(SalePrice, Bed, Bath, Stories, YearCat,LivingSqFt, NewDistance.cat, bar_nn1, bar_nn2, bar_nn3, bar_nn4, 
+                          bar_nn5, CoastDist,Neighbourhood_name, park_nn1, park_nn2, park_nn3, park_nn4, park_nn5, worship_nn1, worship_nn2, 
                           worship_nn3, parking_nn1, parking_nn2, parking_nn3, office_nn1, office_nn2, office_nn3, CoastDist))
 summ(reg)
 summary(reg)
 
+# External Model Validation
+## set random seed
+set.seed(121491)
 
+# get index for training sample
+inTrain <- caret::createDataPartition(
+  y = MiamiDFKnown$SalePrice, 
+  p = .60, list = FALSE)
+
+# split data into training and test, before comma is row, after comma is column
+Miami.training <- MiamiDFKnown[inTrain,] 
+Miami.test     <- MiamiDFKnown[-inTrain,]  
+
+# Regression  
+reg5 <- lm(SalePrice ~ ., data = st_drop_geometry(Miami.training) %>% 
+             dplyr::select(SalePrice, Bed, Bath, Stories, YearCat,LivingSqFt, NewDistance.cat, bar_nn1, bar_nn2, bar_nn3, bar_nn4, 
+                           bar_nn5, CoastDist, park_nn1, park_nn2, park_nn3, park_nn4, park_nn5, worship_nn1, worship_nn2, 
+                           worship_nn3, parking_nn1, parking_nn2, parking_nn3, office_nn1, office_nn2, office_nn3, CoastDist))
+
+
+summary(reg5)
+
+## predicting on new data
+reg5_predict <- predict(reg5, newdata = Miami.test)
+
+# Measure Generalizability
+## Mean Square Error train and test
+rmse.train <- caret::MAE(predict(reg5), Miami.training$SalePrice)
+rmse.test  <- caret::MAE(reg5_predict, Miami.test$SalePrice)
+
+cat("Train MAE: ", as.integer(rmse.train), " \n","Test MAE: ", as.integer(rmse.test))
+
+# Plotting accuracy metrics
+preds.train <- data.frame(pred   = predict(reg5),
+                          actual = Miami.training$SalePrice,
+                          source = "training data")
+preds.test  <- data.frame(pred   = reg5_predict,
+                          actual = Miami.test$SalePrice,
+                          source = "testing data")
+preds <- rbind(preds.train, preds.test)
+
+ggplot(preds, aes(x = pred, y = actual, color = source)) +
+  geom_point() +
+  geom_smooth(method = "lm", color = "green") +
+  geom_abline(color = "orange") +
+  coord_equal() +
+  theme_bw() +
+  facet_wrap(~source, ncol = 2) +
+  labs(title = "Comparing predictions to actual values",
+       x = "Predicted Value",
+       y = "Actual Value") +
+  theme(
+    legend.position = "none"
+  )
+
+# Cross Validation
+fitControl <- trainControl(method = "cv", 
+                           number = 10,
+                           # savePredictions differs from book
+                           savePredictions = TRUE)
+
+set.seed(717)
+
+# for k-folds CV
+reg.cv <- 
+  train(SalePrice ~ ., data = st_drop_geometry(MiamiDFKnown) %>% 
+          dplyr::select(SalePrice, Bath, Stories, ActualSqFt, YearCat, 
+                        BedCat,`3to6ftPool`,LuxuryPool,`8ftres3to8ftPool`,
+                        `Whirpool`,`2to4ftPool`,
+                        `XFs_Central A/C (Aprox 400 sqft/Ton)`), 
+        method = "lm", 
+        trControl = fitControl, 
+        na.action = na.pass)
+
+reg.cv
+
+reg.cv$resample
+
+reg.cv$resample %>% 
+  pivot_longer(-Resample) %>% 
+  mutate(name = as.factor(name)) %>% 
+  ggplot(., aes(x = name, y = value, color = name)) +
+  geom_jitter(width = 0.1) +
+  facet_wrap(~name, ncol = 3, scales = "free") +
+  theme_bw() +
+  theme(
+    legend.position = "none"
+  )
+
+# extract predictions from CV object
+cv_preds <- reg.cv$pred
+# compare number of observations between data sets
+nrow(MiamiDFKnown)
+nrow(cv_preds)
+
+## Create dataset with "out of fold" predictions and original data
+### This isn't working
+map_preds <- MiamiDFKnown %>% 
+  rowid_to_column(var = "rowIndex") %>% 
+  left_join(cv_preds, by = "rowIndex") %>% 
+  mutate(SalePrice.AbsError = abs(pred - SalePrice)) %>% 
+  cbind(st_coordinates(.))
+
+# weird CRS fix to boston.sf
+st_crs(map_preds) <- st_crs(Neighborhoods)
+
+# plot errors on a map
+ggplot() +
+  geom_sf(data = nhoods, fill = "grey40") +
+  geom_sf(data = map_preds, aes(colour = q5(SalePrice.AbsError)),
+          show.legend = "point", size = 1) +
+  scale_colour_manual(values = palette5,
+                      labels=qBr(map_preds,"SalePrice.AbsError"),
+                      name="Quintile\nBreaks") +
+  labs(title="Absolute sale price errors on the OOF set",
+       subtitle = "OOF = 'Out Of Fold'") +
+  mapTheme()
