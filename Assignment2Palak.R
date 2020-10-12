@@ -229,7 +229,7 @@ Municipality <- st_read('https://opendata.arcgis.com/datasets/bd523e71861749959a
 
 Municipality <- st_transform(Municipality,'ESRI:102658')
 
-MiamiBeach <- filter(Municipality, NAME == "MIAMI BEACH")
+Municipality <- filter(Municipality, NAME == "MIAMI BEACH")
 
 Neighborhoods <- Neighborhoods %>%
   rename( Neighbourhood_name = LABEL)
@@ -242,9 +242,9 @@ Municipality <- Municipality %>%
 Municipality <- Municipality %>% select(-FID,-MUNICUID,-MUNICUID,-FIPSCODE,-CREATEDBY, -CREATEDDATE, -MODIFIEDBY, 
                                         -MODIFIEDDATE, -SHAPE_Area, -SHAPE_Length, -MUNICID)
 
-Neighborhoods <- rbind(Neighborhoods, Municipality)
+Neighborhoods_combine <- rbind(Neighborhoods, Municipality)
 
-MiamiDF <- st_join(MiamiDF, Neighborhoods, join = st_intersects) 
+MiamiDF <- st_join(MiamiDF, Neighborhoods_combine, join = st_intersects) 
 
 # Remove Challenge Houses
 
@@ -297,19 +297,19 @@ ggcorrplot(
   insig = "blank") +  
   labs(title = "Correlation across XF variables")   
 
-# Regression Adj R-squared=..699
+# Regression Adj R-squared=..7276
 reg <- lm(SalePrice ~ ., data = st_drop_geometry(MiamiDFKnown) %>% 
             dplyr::select(SalePrice, Bed, Bath, Stories, YearBuilt,LivingSqFt))
 summ(reg)
 summary(reg)
 
-## Regression with Neighborhoods Adj R-squared=.7173
+## Regression with Neighborhoods Adj R-squared=.7474
 reg2 <-lm(SalePrice ~ ., data = st_drop_geometry(MiamiDFKnown) %>% 
             dplyr::select(SalePrice, Bed, Bath, Stories, YearBuilt,LivingSqFt,Neighbourhood_name))
 summ(reg2)
 summary(reg2)
 
-# Creating Year Built Categories A rsquared=.7245
+# Creating Year Built Categories A rsquared=.7539
 ## Need to move this code before split
 MiamiDFKnown$YearCat <- cut(MiamiDFKnown$YearBuilt, c(1900,1909,1919,1929,1939,1949,
                                                       1959,1969,1979,1989,1999,2009,2019))
@@ -421,7 +421,7 @@ MiamiDFKnown <-
     Distance >= 0.5 & Distance < 0.75  ~ "Three Quater Mile",
     Distance > 1                    ~ "More than one Mile"))
 
-# Regression R-sq = .7425
+# Regression R-sq = .7695
 
 reg <- lm(SalePrice ~ ., data = st_drop_geometry(MiamiDFKnown) %>% 
             dplyr::select(SalePrice, Bed, Bath, Stories, YearCat,LivingSqFt, Neighbourhood_name, NewDistance.cat))
@@ -472,7 +472,7 @@ MiamiDFKnown <-
     bar_nn4 = nn_function(st_c(st_centroid(MiamiDFKnown)), st_c(bars), 15), 
     bar_nn5 = nn_function(st_c(st_centroid(MiamiDFKnown)), st_c(bars), 20)) 
 
-# Regression R-sq = .7438
+# Regression R-sq = .7732
 reg <- lm(SalePrice ~ ., data = st_drop_geometry(MiamiDFKnown) %>% 
             dplyr::select(SalePrice, Bed, Bath, Stories, YearCat,LivingSqFt, Neighbourhood_name,
                           NewDistance.cat, bar_nn1, bar_nn2, bar_nn3, bar_nn4, bar_nn5))
@@ -496,7 +496,7 @@ MiamiDFKnown <-
 
 MiamiDFKnown <- st_transform(MiamiDFKnown,'ESRI:102658' )
 
-## Regression R-sq = .7451
+## Regression R-sq = .7738
 reg <- lm(SalePrice ~ ., data = st_drop_geometry(MiamiDFKnown) %>% 
                      dplyr::select(SalePrice, Bed, Bath, Stories, YearCat,LivingSqFt, Neighbourhood_name, 
                                    NewDistance.cat, bar_nn1, bar_nn2, bar_nn3, bar_nn4, bar_nn5, CoastDist))
@@ -562,7 +562,7 @@ MiamiDFKnown <- st_join(MiamiDFKnown, ElementarySchool, join = st_intersects)
 MiamiDFKnown <- st_join(MiamiDFKnown, MiddleSchool, join = st_intersects) 
 MiamiDFKnown <- st_join(MiamiDFKnown, HighSchool, join = st_intersects) 
 
-# Regression R-sq = .6297
+# Regression R-sq = .7738
 
 reg <- lm(SalePrice ~ ., data = st_drop_geometry(MiamiDFKnown) %>%
                      dplyr::select(SalePrice, Bed, Bath, Stories, YearCat,LivingSqFt,Neighbourhood_name, NewDistance.cat, bar_nn1, 
@@ -585,7 +585,7 @@ MiamiDFKnown <-
     park_nn4 = nn_function(st_c(st_centroid(MiamiDFKnown)), st_c(Parks), 5), 
     park_nn5 = nn_function(st_c(st_centroid(MiamiDFKnown)), st_c(Parks), 10)) 
 
-# Regression R-sq = .7482
+# Regression R-sq = .7828
 
 reg <- lm(SalePrice ~ ., data = st_drop_geometry(MiamiDFKnown) %>%
             dplyr::select(SalePrice, Bed, Bath, Stories, YearCat,LivingSqFt,Neighbourhood_name, 
@@ -616,7 +616,7 @@ MiamiDFKnown <-
     worship_nn2 = nn_function(st_c(st_centroid(MiamiDFKnown)), st_c(worship), 2), 
     worship_nn3 = nn_function(st_c(st_centroid(MiamiDFKnown)), st_c(worship), 10)) 
 
-# Regression R-sq = .7486
+# Regression R-sq = .7827
 reg <- lm(SalePrice ~ ., data = st_drop_geometry(MiamiDFKnown) %>%
             dplyr::select(SalePrice, Bed, Bath, Stories, YearCat,LivingSqFt, NewDistance.cat, bar_nn1, bar_nn2, bar_nn3, bar_nn4, 
                           bar_nn5, CoastDist, park_nn1, park_nn2, park_nn3, park_nn4, park_nn5, worship_nn1, worship_nn2, 
@@ -627,7 +627,7 @@ summary(reg)
 ## Parking
 
 parking <- opq(bbox = c(xmin, ymin, xmax, ymax)) %>% 
-  add_osm_feature(key = 'amenity', value = c("parking", "parking_space")) %>%
+  add_osm_feature(key = 'amenity', value = c("parking", "parking_space", "parking_entrance")) %>%
   osmdata_sf()
 
 parking <- 
@@ -647,7 +647,7 @@ MiamiDFKnown <-
     parking_nn2 = nn_function(st_c(st_centroid(MiamiDFKnown)), st_c(parking), 5), 
     parking_nn3 = nn_function(st_c(st_centroid(MiamiDFKnown)), st_c(parking), 10)) 
 
-# Regression R-sq = .7487
+# Regression R-sq = .7826
 reg <- lm(SalePrice ~ ., data = st_drop_geometry(MiamiDFKnown) %>%
             dplyr::select(SalePrice, Bed, Bath, Stories, YearCat,LivingSqFt, NewDistance.cat, bar_nn1, bar_nn2, bar_nn3, bar_nn4, 
                           bar_nn5, CoastDist, Neighbourhood_name, park_nn1, park_nn2, park_nn3, park_nn4, park_nn5, worship_nn1, worship_nn2,
@@ -669,7 +669,7 @@ MiamiDFKnown <-
     office_nn2 = nn_function(st_c(st_centroid(MiamiDFKnown)), st_c(st_centroid(office)), 5), 
     office_nn3 = nn_function(st_c(st_centroid(MiamiDFKnown)), st_c(st_centroid(office)), 10)) 
 
-# regression R-sq = .7508
+# regression R-sq = .783
 
 reg <- lm(SalePrice ~ ., data = st_drop_geometry(MiamiDFKnown) %>%
             dplyr::select(SalePrice, Bed, Bath, Stories, YearCat,LivingSqFt, NewDistance.cat, bar_nn1, bar_nn2, bar_nn3, bar_nn4, 
@@ -691,7 +691,7 @@ inTrain <- caret::createDataPartition(
 Miami.training <- MiamiDFKnown[inTrain,] 
 Miami.test     <- MiamiDFKnown[-inTrain,]  
 
-# Regression  
+# Regression  0.7862, 0.7927, 0.7882, 0.7835
 reg5 <- lm(SalePrice ~ ., data = st_drop_geometry(Miami.training) %>% 
              dplyr::select(SalePrice, Bed, Bath, Stories, YearCat,LivingSqFt, NewDistance.cat, bar_nn1, bar_nn2, bar_nn3, bar_nn4, 
                            bar_nn5, CoastDist, park_nn1, park_nn2, park_nn3, park_nn4, park_nn5, worship_nn1, worship_nn2, 
