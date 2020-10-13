@@ -192,11 +192,11 @@ MiamiDF <- dplyr::select(MiamiDF,-saleQual,-WVDB,-HEX,-GPAR,-County.2nd.HEX,
                          -Owner1,-Owner2,-Mailing.Address,-Mailing.City,
                          -Mailing.State,-Mailing.Zip,-Mailing.Country)
 
+MiamiDF <- st_as_sf(MiamiDF)
+
 # Wrangle XF Columns
 MiamiDF<- mutate(MiamiDF,XFs=paste(XF1,XF2,XF3, sep=",")) %>%
   dummy_cols(select_columns="XFs", split=",")
-
-MiamiDF <- st_as_sf(MiamiDF)
 
 MiamiDF$LuxuryPool<- ifelse(MiamiDF$`XFs_Luxury Pool - Best`==1 | MiamiDF$`XFs_Luxury Pool - Better`==1 | MiamiDF$`XFs_Luxury Pool - Good.`==1,1,0)
 
@@ -210,7 +210,7 @@ MiamiDF <- rename(MiamiDF, Whirpool=`XFs_Whirlpool - Attached to Pool (whirlpool
 
 MiamiDF <- rename(MiamiDF,`2to4ftPool`= `XFs_Pool - Wading - 2-4' depth`)
 
-MiamiDF <- select(MiamiDF,-"XFs_Pool 6' res BETTER 3-8' dpth",
+MiamiDF <- dplyr::select(MiamiDF,-"XFs_Pool 6' res BETTER 3-8' dpth",
                   -"XFs_Pool 6' res AVG 3-8' dpth",-"XFs_Luxury Pool - Best",
                   -"XFs_Luxury Pool - Better",-"XFs_Luxury Pool - Good.",
                   -"XFs_Pool COMM AVG 3-6' dpth",-"XFs_Pool COMM BETTER 3-6' dpth",
@@ -218,7 +218,29 @@ MiamiDF <- select(MiamiDF,-"XFs_Pool 6' res BETTER 3-8' dpth",
                   -"XFs_Tiki Hut - Good Thatch roof w/poles & electric",-"XFs_Tiki Hut - Better Thatch roof",
                   -"XFs_Bomb Shelter - Concrete Block",-"XFs_Tennis Court - Asphalt or Clay" ) 
 
-MiamiDF <- st_as_sf(MiamiDF)
+
+# Wrangle Fence Columns
+MiamiDF$Fence <- ifelse(MiamiDF$`XFs_Aluminum Modular Fence`==1| MiamiDF$`XFs_Wood Fence`==1|MiamiDF$`XFs_Chain-link Fence 4-5 ft high`==1|MiamiDF$`XFs_Wrought Iron Fence`==1|MiamiDF$`XFs_Chain-link Fence 6-7 ft high`==1|MiamiDF$`XFs_Concrete Louver Fence`==1|MiamiDF$`XFs_Chain-link Fence 8-9 ft high`==1|MiamiDF$`XFs_Glass fences in backyard applications`==1,1,0)
+
+MiamiDF <- dplyr::select(MiamiDF,-"XFs_Aluminum Modular Fence",
+                  -"XFs_Wood Fence",-"XFs_Chain-link Fence 4-5 ft high",
+                  -"XFs_Wrought Iron Fence",-"XFs_Chain-link Fence 6-7 ft high",
+                  -"XFs_Concrete Louver Fence",-"XFs_Chain-link Fence 8-9 ft high",
+                  -"XFs_Glass fences in backyard applications")
+
+# Wrangle Patio Columns
+MiamiDF$Patio <- ifelse(MiamiDF$`XFs_Patio - Concrete Slab`==1|MiamiDF$`XFs_Patio - Concrete Slab w/Roof Aluminum or Fiber`==1|MiamiDF$`XFs_Patio - Wood Deck`==1|MiamiDF$`XFs_Patio - Marble`==1|MiamiDF$`XFs_Patio - Terrazzo`==1|MiamiDF$`XFs_Patio - Screened over Concrete Slab`==1|MiamiDF$`XFs_Patio - Exotic hardwood`==1|MiamiDF$`XFs_Patio - Concrete stamped or stained`==1,1,0)
+
+MiamiDF <- dplyr::select(MiamiDF,-"XFs_Patio - Concrete Slab",-"XFs_Patio - Concrete Slab w/Roof Aluminum or Fiber",
+                 -"XFs_Patio - Wood Deck",-"XFs_Patio - Marble",
+                 -"XFs_Patio - Terrazzo",-"XFs_Patio - Screened over Concrete Slab",
+                 -"XFs_Patio - Exotic hardwood",-"XFs_Patio - Concrete stamped or stained")
+
+# Create Categorical Variables
+MiamiDF$YearCat <- cut(MiamiDF$YearBuilt, c(1900,1909,1919,1929,1939,1949,
+                                            1959,1969,1979,1989,1999,2009,2019))
+
+MiamiDF$BedCat <- cut(MiamiDF$Bed,breaks=c(0:8,Inf), right=FALSE, labels=c(0:7,"8+"))
 
 # Join Neighborhood Data
 Neighborhoods <- st_read("https://opendata.arcgis.com/datasets/2f54a0cbd67046f2bd100fb735176e6c_0.geojson")
@@ -234,15 +256,17 @@ Municipality <- filter(Municipality, NAME == "MIAMI BEACH")
 Neighborhoods <- Neighborhoods %>%
   rename( Neighbourhood_name = LABEL)
 
-Neighborhoods <- Neighborhoods %>% select(-FID,-Shape_STAr,-Shape_STLe,-Shape__Area,-Shape__Length)
+Neighborhoods <- Neighborhoods %>% dplyr::select(-FID,-Shape_STAr,-Shape_STLe,-Shape__Area,-Shape__Length)
 
 Municipality <- Municipality %>%
   rename( Neighbourhood_name = NAME) 
   
-Municipality <- Municipality %>% select(-FID,-MUNICUID,-MUNICUID,-FIPSCODE,-CREATEDBY, -CREATEDDATE, -MODIFIEDBY, 
+Municipality <- Municipality %>% dplyr::select(-FID,-MUNICUID,-MUNICUID,-FIPSCODE,-CREATEDBY, -CREATEDDATE, -MODIFIEDBY, 
                                         -MODIFIEDDATE, -SHAPE_Area, -SHAPE_Length, -MUNICID)
 
 Neighborhoods_combine <- rbind(Neighborhoods, Municipality)
+
+MiamiDF <- st_as_sf(MiamiDF)
 
 MiamiDF <- st_join(MiamiDF, Neighborhoods_combine, join = st_intersects) 
 
@@ -311,8 +335,6 @@ summary(reg2)
 
 # Creating Year Built Categories A rsquared=.7539
 ## Need to move this code before split
-MiamiDFKnown$YearCat <- cut(MiamiDFKnown$YearBuilt, c(1900,1909,1919,1929,1939,1949,
-                                                      1959,1969,1979,1989,1999,2009,2019))
 
 reg3 <-lm(SalePrice ~ ., data = st_drop_geometry(MiamiDFKnown) %>% 
             dplyr::select(SalePrice, Bed, Bath, Stories, YearCat,LivingSqFt,Neighbourhood_name))
@@ -418,8 +440,8 @@ MiamiDFKnown <-
   mutate(NewDistance.cat = case_when(
     Distance >= 0 & Distance < 0.25  ~ "Quater Mile",
     Distance >= 0.25 & Distance < 0.5  ~ "Half Mile",
-    Distance >= 0.5 & Distance < 0.75  ~ "Three Quater Mile",
-    Distance > 1                    ~ "More than one Mile"))
+    Distance >= 0.5 & Distance <= 0.75  ~ "Three Quater Mile",
+    Distance >= 1                    ~ "More than one Mile"))
 
 # Regression R-sq = .7695
 
@@ -510,7 +532,7 @@ summary(reg)
 ElementarySchool <- st_read("https://opendata.arcgis.com/datasets/19f5d8dcd9714e6fbd9043ac7a50c6f6_0.geojson")
 
 ElementarySchool<- st_transform(ElementarySchool,'ESRI:102658') %>%
-  select(-FID,-ID,-ZIPCODE,-PHONE,-REGION,-ID2,-FLAG,-CREATEDBY,-CREATEDDATE,-MODIFIEDBY,-MODIFIEDDATE)
+  dplyr::select(-FID,-ID,-ZIPCODE,-PHONE,-REGION,-ID2,-FLAG,-CREATEDBY,-CREATEDDATE,-MODIFIEDBY,-MODIFIEDDATE)
 
 ElementarySchool<-filter(ElementarySchool, CITY == "Miami"| CITY == "MiamiBeach")
 
@@ -523,7 +545,7 @@ ggplot() +
 MiddleSchool <- st_read("https://opendata.arcgis.com/datasets/dd2719ff6105463187197165a9c8dd5c_0.geojson")
 
 MiddleSchool<- st_transform(MiddleSchool,'ESRI:102658') %>%
-  select(-FID,-ID,-ZIPCODE,-PHONE,-REGION,-ID2,-CREATEDBY,-CREATEDDATE,-MODIFIEDBY,-MODIFIEDDATE)
+  dplyr::select(-FID,-ID,-ZIPCODE,-PHONE,-REGION,-ID2,-CREATEDBY,-CREATEDDATE,-MODIFIEDBY,-MODIFIEDDATE)
 
 MiddleSchool<-filter(MiddleSchool, CITY == "Miami"| CITY == "MiamiBeach")
 
@@ -536,7 +558,7 @@ ggplot() +
 HighSchool <- st_read("https://opendata.arcgis.com/datasets/9004dbf5f7f645d493bfb6b875a43dc1_0.geojson")
 
 HighSchool<- st_transform(HighSchool,'ESRI:102658') %>%
-  select(-FID,-ID,-ZIPCODE,-PHONE,-REGION,-ID2,-CREATEDBY,-CREATEDDATE,-MODIFIEDBY,-MODIFIEDDATE)
+  dplyr::select(-FID,-ID,-ZIPCODE,-PHONE,-REGION,-ID2,-CREATEDBY,-CREATEDDATE,-MODIFIEDBY,-MODIFIEDDATE)
 
 HighSchool<-filter(HighSchool, CITY == "Miami"| CITY == "MiamiBeach")
 
@@ -550,13 +572,13 @@ MiddleSchool['Middle'] <- "Middle"
 HighSchool['High']<-"High"
 
 ElementarySchool <- ElementarySchool %>% 
-  select(-ADDRESS,-CITY,-GRADES,-DISPLAYNAME,-SHAPE_Length,-SHAPE_Area)
+  dplyr::select(-ADDRESS,-CITY,-GRADES,-DISPLAYNAME,-SHAPE_Length,-SHAPE_Area)
 
 MiddleSchool <- MiddleSchool %>% 
-  select(-ADDRESS,-CITY,-GRADES,-DISPLAYNAME,-SHAPE_Length,-SHAPE_Area)
+  dplyr::select(-ADDRESS,-CITY,-GRADES,-DISPLAYNAME,-SHAPE_Length,-SHAPE_Area)
 
 HighSchool <- HighSchool %>% 
-  select(-ADDRESS,-CITY,-GRADES,-DISPLAYNAME,-SHAPE_Length,-SHAPE_Area)
+  dplyr::select(-ADDRESS,-CITY,-GRADES,-DISPLAYNAME,-SHAPE_Length,-SHAPE_Area)
 
 MiamiDFKnown <- st_join(MiamiDFKnown, ElementarySchool, join = st_intersects) 
 MiamiDFKnown <- st_join(MiamiDFKnown, MiddleSchool, join = st_intersects) 
@@ -693,7 +715,8 @@ Miami.test     <- MiamiDFKnown[-inTrain,]
 
 # Regression  0.7862, 0.7927, 0.7882, 0.7835
 reg5 <- lm(SalePrice ~ ., data = st_drop_geometry(Miami.training) %>% 
-             dplyr::select(SalePrice, Bed, Bath, Stories, YearCat,LivingSqFt, NewDistance.cat, bar_nn1, bar_nn2, bar_nn3, bar_nn4, 
+             dplyr::select(SalePrice,BedCat, Bath, Stories, YearCat,LivingSqFt,Patio,Fence,`3to8ftPool`,Whirpool,
+                           `3to6ftPool`,`LuxuryPool`, NewDistance.cat, bar_nn1, bar_nn2, bar_nn3, bar_nn4, Neighbourhood_name,
                            bar_nn5, CoastDist, park_nn1, park_nn2, park_nn3, park_nn4, park_nn5, worship_nn1, worship_nn2, 
                            worship_nn3, parking_nn1, parking_nn2, parking_nn3, office_nn1, office_nn2, office_nn3, CoastDist))
 
@@ -702,6 +725,20 @@ summary(reg5)
 
 ## predicting on new data
 reg5_predict <- predict(reg5, newdata = Miami.test)
+
+Miami.test <-
+  Miami.test %>%
+  mutate(SalePrice.Predict = predict(reg5, Miami.test),
+         SalePrice.Error = SalePrice.Predict - SalePrice,
+         SalePrice.AbsError = abs(SalePrice.Predict - SalePrice),
+         SalePrice.APE = (abs(SalePrice.Predict - SalePrice)) / SalePrice.Predict)
+
+mean(Miami.test$SalePrice.AbsError, na.rm = T)
+mean(Miami.test$SalePrice.APE, na.rm = T)
+
+### Try to figure out how to make a histogram of AbsError, see section 3.4.1 ## add different x value
+hist(Miami.test$`SalePrice.AbsError`,xlab="Sales Price Absolute Error",
+     breaks=50, col="purple")
 
 # Measure Generalizability
 ## Mean Square Error train and test
@@ -744,10 +781,10 @@ set.seed(717)
 # for k-folds CV
 reg.cv <- 
   train(SalePrice ~ ., data = st_drop_geometry(MiamiDFKnown) %>% 
-          dplyr::select(SalePrice, Bath, Stories, ActualSqFt, YearCat, 
-                        BedCat,`3to6ftPool`,LuxuryPool,`8ftres3to8ftPool`,
-                        `Whirpool`,`2to4ftPool`,
-                        `XFs_Central A/C (Aprox 400 sqft/Ton)`), 
+          dplyr::select(SalePrice,BedCat, Bath, Stories, YearCat,LivingSqFt,Patio,Fence,`3to8ftPool`,Whirpool,
+                        `3to6ftPool`,`LuxuryPool`, NewDistance.cat, bar_nn1, bar_nn2, bar_nn3, bar_nn4, Neighbourhood_name,
+                        bar_nn5, CoastDist, park_nn1, park_nn2, park_nn3, park_nn4, park_nn5, worship_nn1, worship_nn2, 
+                        worship_nn3, parking_nn1, parking_nn2, parking_nn3, office_nn1, office_nn2, office_nn3, CoastDist), 
         method = "lm", 
         trControl = fitControl, 
         na.action = na.pass)
@@ -774,7 +811,11 @@ nrow(MiamiDFKnown)
 nrow(cv_preds)
 
 ## Create dataset with "out of fold" predictions and original data
-### This isn't working
+
+MiamiDFKnown <- MiamiDFKnown %>%
+  mutate(pred = predict(reg.cv, .)) %>%  #get a prediction for each row
+  mutate(error = pred - SalePrice)    #calculate errors
+
 map_preds <- MiamiDFKnown %>% 
   rowid_to_column(var = "rowIndex") %>% 
   left_join(cv_preds, by = "rowIndex") %>% 
@@ -786,11 +827,11 @@ st_crs(map_preds) <- st_crs(Neighborhoods)
 
 # plot errors on a map
 ggplot() +
-  geom_sf(data = nhoods, fill = "grey40") +
-  geom_sf(data = map_preds, aes(colour = q5(SalePrice.AbsError)),
+  geom_sf(data = Neighborhoods_combine, fill = "grey40") +
+  geom_sf(data = MiamiDFKnown, aes(colour = q5(error)),
           show.legend = "point", size = 1) +
   scale_colour_manual(values = palette5,
-                      labels=qBr(map_preds,"SalePrice.AbsError"),
+                      labels=qBr(MiamiDFKnown,"error"),
                       name="Quintile\nBreaks") +
   labs(title="Absolute sale price errors on the OOF set",
        subtitle = "OOF = 'Out Of Fold'") +
