@@ -264,11 +264,51 @@ Municipality <- Municipality %>%
 Municipality <- Municipality %>% dplyr::select(-FID,-MUNICUID,-MUNICUID,-FIPSCODE,-CREATEDBY, -CREATEDDATE, -MODIFIEDBY, 
                                         -MODIFIEDDATE, -SHAPE_Area, -SHAPE_Length, -MUNICID)
 
+
+Municipality$Neighbourhood_name <- make.names(Municipality$Neighbourhood_name, unique=TRUE)
+
 Neighborhoods_combine <- rbind(Neighborhoods, Municipality)
 
 MiamiDF <- st_as_sf(MiamiDF)
 
+MiamiDF <-   st_centroid(MiamiDF)
+
 MiamiDF <- st_join(MiamiDF, Neighborhoods_combine, join = st_intersects) 
+
+
+## Census data
+
+census_api_key("aea3dee2d96acb5101e94f3dcfa1b575f73d093a", overwrite = TRUE)
+
+Miamitracts <-  
+  get_acs(geography = "tract", variables = c("B25026_001E","B02001_002E","B19013_001E",
+                                             "B25058_001E","B02001_003E","B02001_004E",
+                                             "B02001_005E","B02001_006E","B03001_003E"), 
+          year=2017, state=12, county=086, geometry=T) %>% 
+  st_transform('ESRI:102658')
+
+Miamitracts <- 
+  Miamitracts %>%
+  dplyr::select( -NAME, -moe) %>%
+  spread(variable, estimate) %>%
+  dplyr::select(-geometry) %>%
+  rename(TotalPop = B25026_001, 
+         Whites = B02001_002,
+         Blacks = B02001_003,
+         AmInd = B02001_004,
+         Asian = B02001_005,
+         Hawaiian = B02001_006,
+         Hispanic = B03001_003,
+         MedHHInc = B19013_001, 
+         MedRent = B25058_001
+  )
+
+ggplot() + 
+  geom_sf(data=Miamitracts)
+
+MiamiDF <- st_join(MiamiDF, Miamitracts, join = st_intersects) 
+
+  ## Play with rent of census tracts
 
 # Remove Challenge Houses
 
@@ -586,6 +626,10 @@ MiamiDFKnown <- st_join(MiamiDFKnown, ElementarySchool, join = st_intersects)
 MiamiDFKnown <- st_join(MiamiDFKnown, MiddleSchool, join = st_intersects) 
 MiamiDFKnown <- st_join(MiamiDFKnown, HighSchool, join = st_intersects) 
 
+MiamiDFKnown$NAME <- ifelse(is.na(MiamiDFKnown$NAME), "Other", MiamiDFKnown$NAME)
+MiamiDFKnown$NAME.x <- ifelse(is.na(MiamiDFKnown$NAME.x), "Other", MiamiDFKnown$NAME.x)
+MiamiDFKnown$NAME.y <- ifelse(is.na(MiamiDFKnown$NAME.y), "Other", MiamiDFKnown$NAME.y)
+
 # Regression R-sq = .7738
 
 reg <- lm(SalePrice ~ ., data = st_drop_geometry(MiamiDFKnown) %>%
@@ -702,35 +746,6 @@ reg <- lm(SalePrice ~ ., data = st_drop_geometry(MiamiDFKnown) %>%
 summ(reg)
 summary(reg)
 
-## Census data
-
-census_api_key("aea3dee2d96acb5101e94f3dcfa1b575f73d093a", overwrite = TRUE)
-
-Miamitracts <-  
-  get_acs(geography = "tract", variables = c("B25026_001E","B02001_002E","B19013_001E",
-                                             "B25058_001E","B02001_003E","B02001_004E",
-                                             "B02001_005E","B02001_006E","B03001_003E"), 
-          year=2017, state=12, county=086, geometry=T) %>% 
-  st_transform('ESRI:102658')
-
-Miamitracts <- 
-  Miamitracts %>%
-  dplyr::select( -NAME, -moe) %>%
-  spread(variable, estimate) %>%
-  dplyr::select(-geometry) %>%
-  rename(TotalPop = B25026_001, 
-         Whites = B02001_002,
-         Blacks = B02001_003,
-         AmInd = B02001_004,
-         Asian = B02001_005,
-         Hawaiian = B02001_006,
-         Hispanic = B03001_003,
-         MedHHInc = B19013_001, 
-         MedRent = B25058_001
-  )
-
-ggplot() + 
-  geom_sf(data=Miamitracts)
 
 # External Model Validation
 ## set random seed
