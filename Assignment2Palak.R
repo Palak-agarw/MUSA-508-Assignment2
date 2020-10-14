@@ -441,7 +441,9 @@ MiamiDFKnown <-
     Distance >= 0 & Distance < 0.25  ~ "Quater Mile",
     Distance >= 0.25 & Distance < 0.5  ~ "Half Mile",
     Distance >= 0.5 & Distance <= 0.75  ~ "Three Quater Mile",
-    Distance >= 1                    ~ "More than one Mile"))
+    Distance >= 1 & Distance < 2   ~ "More than one Mile",
+    Distance >= 2 & Distance < 3   ~ "More than two Mile",
+    Distance >= 3    ~ "More than three Mile"))
 
 # Regression R-sq = .7695
 
@@ -588,7 +590,7 @@ MiamiDFKnown <- st_join(MiamiDFKnown, HighSchool, join = st_intersects)
 
 reg <- lm(SalePrice ~ ., data = st_drop_geometry(MiamiDFKnown) %>%
                      dplyr::select(SalePrice, Bed, Bath, Stories, YearCat,LivingSqFt,Neighbourhood_name, NewDistance.cat, bar_nn1, 
-                                   bar_nn2, bar_nn3, bar_nn4,bar_nn5, CoastDist, NAME.x.1, NAME.x, NAME.y))
+                                   bar_nn2, bar_nn3, bar_nn4,bar_nn5, CoastDist, NAME.x, NAME, NAME.y))
 summ(reg)
 summary(reg)
 
@@ -666,8 +668,8 @@ MiamiDFKnown <-
   MiamiDFKnown %>% 
   mutate(
     parking_nn1 = nn_function(st_c(st_centroid(MiamiDFKnown)), st_c(parking), 1),
-    parking_nn2 = nn_function(st_c(st_centroid(MiamiDFKnown)), st_c(parking), 5), 
-    parking_nn3 = nn_function(st_c(st_centroid(MiamiDFKnown)), st_c(parking), 10)) 
+    parking_nn2 = nn_function(st_c(st_centroid(MiamiDFKnown)), st_c(parking), 2), 
+    parking_nn3 = nn_function(st_c(st_centroid(MiamiDFKnown)), st_c(parking), 5)) 
 
 # Regression R-sq = .7826
 reg <- lm(SalePrice ~ ., data = st_drop_geometry(MiamiDFKnown) %>%
@@ -700,13 +702,43 @@ reg <- lm(SalePrice ~ ., data = st_drop_geometry(MiamiDFKnown) %>%
 summ(reg)
 summary(reg)
 
+## Census data
+
+census_api_key("aea3dee2d96acb5101e94f3dcfa1b575f73d093a", overwrite = TRUE)
+
+Miamitracts <-  
+  get_acs(geography = "tract", variables = c("B25026_001E","B02001_002E","B19013_001E",
+                                             "B25058_001E","B02001_003E","B02001_004E",
+                                             "B02001_005E","B02001_006E","B03001_003E"), 
+          year=2017, state=12, county=086, geometry=T) %>% 
+  st_transform('ESRI:102658')
+
+Miamitracts <- 
+  Miamitracts %>%
+  dplyr::select( -NAME, -moe) %>%
+  spread(variable, estimate) %>%
+  dplyr::select(-geometry) %>%
+  rename(TotalPop = B25026_001, 
+         Whites = B02001_002,
+         Blacks = B02001_003,
+         AmInd = B02001_004,
+         Asian = B02001_005,
+         Hawaiian = B02001_006,
+         Hispanic = B03001_003,
+         MedHHInc = B19013_001, 
+         MedRent = B25058_001
+  )
+
+ggplot() + 
+  geom_sf(data=Miamitracts)
+
 # External Model Validation
 ## set random seed
 set.seed(121491)
 
 # get index for training sample
-inTrain <- caret::createDataPartition(
-  y = MiamiDFKnown$SalePrice, 
+inTrain <- caret::createDataPartition( 
+  y = paste(MiamiDFKnown$Neighbourhood_name,MiamiDFKnown$BedCat, MiamiDFKnown$NAME, MiamiDFKnown$NAME.x, MiamiDFKnown$NAME.y ), 
   p = .60, list = FALSE)
 
 # split data into training and test, before comma is row, after comma is column
@@ -716,15 +748,25 @@ Miami.test     <- MiamiDFKnown[-inTrain,]
 # Regression  0.7862, 0.7927, 0.7882, 0.7835
 reg5 <- lm(SalePrice ~ ., data = st_drop_geometry(Miami.training) %>% 
              dplyr::select(SalePrice,BedCat, Bath, Stories, YearCat,LivingSqFt,Patio,Fence,`3to8ftPool`,Whirpool,
-                           `3to6ftPool`,`LuxuryPool`, NewDistance.cat, bar_nn1, bar_nn2, bar_nn3, bar_nn4, Neighbourhood_name,
-                           bar_nn5, CoastDist, park_nn1, park_nn2, park_nn3, park_nn4, park_nn5, worship_nn1, worship_nn2, 
-                           worship_nn3, parking_nn1, parking_nn2, parking_nn3, office_nn1, office_nn2, office_nn3, CoastDist))
+                           `3to6ftPool`,`LuxuryPool`, NewDistance.cat, bar_nn2, bar_nn3, bar_nn4, Neighbourhood_name,
+                           CoastDist, park_nn4, park_nn5, CoastDist))
 
 
 summary(reg5)
 
 ## predicting on new data
 reg5_predict <- predict(reg5, newdata = Miami.test)
+
+nhood_sum <- Miami.test %>% 
+  group_by(Neighbourhood_name) %>%
+  summarize(meanPrice = mean(SalePrice, na.rm = T),
+            meanPrediction = mean(SalePrice.Predict, na.rm = T),
+            meanMAE = mean(SalePrice.AbsError, na.rm = T))
+
+nhood_sum %>% 
+  st_drop_geometry %>%
+  arrange(desc(meanMAE)) %>% 
+  kable() %>% kable_styling()
 
 Miami.test <-
   Miami.test %>%
@@ -782,9 +824,8 @@ set.seed(717)
 reg.cv <- 
   train(SalePrice ~ ., data = st_drop_geometry(MiamiDFKnown) %>% 
           dplyr::select(SalePrice,BedCat, Bath, Stories, YearCat,LivingSqFt,Patio,Fence,`3to8ftPool`,Whirpool,
-                        `3to6ftPool`,`LuxuryPool`, NewDistance.cat, bar_nn1, bar_nn2, bar_nn3, bar_nn4, Neighbourhood_name,
-                        bar_nn5, CoastDist, park_nn1, park_nn2, park_nn3, park_nn4, park_nn5, worship_nn1, worship_nn2, 
-                        worship_nn3, parking_nn1, parking_nn2, parking_nn3, office_nn1, office_nn2, office_nn3, CoastDist), 
+                        `3to6ftPool`,`LuxuryPool`, NewDistance.cat, bar_nn2, bar_nn3, bar_nn4, Neighbourhood_name,
+                        CoastDist, park_nn4, park_nn5, office_nn2, office_nn3, CoastDist), 
         method = "lm", 
         trControl = fitControl, 
         na.action = na.pass)
@@ -836,3 +877,17 @@ ggplot() +
   labs(title="Absolute sale price errors on the OOF set",
        subtitle = "OOF = 'Out Of Fold'") +
   mapTheme()
+
+map_preds_sum <- MiamiDFKnown %>% 
+  group_by(Neighbourhood_name) %>% 
+  summarise(meanMAE = mean(error))
+
+ggplot() +
+  geom_sf(data = Neighborhoods_combine %>% 
+            left_join(st_drop_geometry(map_preds_sum), by = "Neighbourhood_name"),
+          aes(fill = q5(meanMAE))) +
+  scale_fill_manual(values = palette5,
+                    labels=qBr(nhood_sum,"meanMAE"),
+                    name="Quintile\nBreaks") +
+  mapTheme() +
+  labs(title="Absolute sale price errors on the OOF set by Neighborhood")
