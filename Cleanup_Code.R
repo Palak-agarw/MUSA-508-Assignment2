@@ -358,6 +358,23 @@ MiamiDF <-
     Distance >= 2 & Distance < 3   ~ "More than two Mile",
     Distance >= 3    ~ "More than three Mile"))
 
+MiamiDF <- 
+  MiamiDF %>%
+  mutate(dist.metro = nn_function(st_coordinates(MiamiDF), 
+                                  st_coordinates(metroStops), 1)/5280)
+
+MiamiDF <- 
+  MiamiDF %>%
+  mutate(dist.metro.cat = case_when(
+    dist.metro >= 0 & dist.metro < 0.25  ~ "Less than Quater Mile",
+    dist.metro >= 0.25 & dist.metro < 0.5  ~ "Less than Half Mile",
+    dist.metro >= 0.5 & dist.metro < 0.75  ~ "Less than Three Quater Mile",
+    dist.metro >= 0.75 & dist.metro < 1  ~ "Less than one Mile",
+    dist.metro >= 1 & dist.metro < 2   ~ "More than one Mile",
+    dist.metro >= 2 & dist.metro < 3   ~ "More than two Mile",
+    dist.metro >= 3    ~ "More than three Mile"))
+
+
 ## Bar/ restaurant data
 
 miami.base <- 
