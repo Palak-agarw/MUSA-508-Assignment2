@@ -830,3 +830,211 @@ MiamiDF$MedHHInc <- ifelse(is.na(MiamiDF$MedHHInc), 59223.68, MiamiDF$MedHHInc)
 #### Split dataframe into training and testing datasets
 
 ```{r Split, message=FALSE, warning=FALSE}
+
+# Remove Challenge Houses
+MiamiDFKnown <- MiamiDF[!(MiamiDF$SalePrice==0),]
+
+# External Model Validation
+## set random seed
+set.seed(121491)
+
+# get index for training sample
+inTrain <- caret::createDataPartition(
+  y = paste(MiamiDFKnown$Neighbourhood_name,MiamiDFKnown$BedCat,MiamiDFKnown$`Property.City`), 
+  p = .60, list = FALSE)
+
+# split data into training and test, before comma is row, after comma is column
+Miami.training <- MiamiDFKnown[inTrain,] 
+Miami.test     <- MiamiDFKnown[-inTrain,]  
+
+```
+
+#### Regression and predicting Saleprice for test dataset
+
+```{r Regression, message=FALSE, warning=FALSE}
+
+reg <- lm(SalePrice ~ ., data = st_drop_geometry(Miami.training) %>% 
+             dplyr::select(SalePrice,ActualSqFt, Neighbourhood_name,MedHHInc, pctWhite, pctHispanic, worship_nn1,
+                           `8ftres3to8ftPool`,`2to4ftPool`,Whirpool,LuxuryPool, LotSize, park_nn4, bar_nn2, hospital_nn1,
+                           `3to6ftPool`,`3to8ftPool`,BedCat,Docks,lagPrice,parking_nn2,school_nn1, ElementarySchool,
+                           EffectiveYearBuilt,Zoning,Bath,Stories,logCoastDist,`Property.City`,office_nn3, dist.metro,Fence,`XFs_Elevator - Passenger`))
+summ(reg)
+summary(reg)
+
+## predicting on new data
+reg_predict <- predict(reg, newdata = Miami.test, na.action = na.pass)
+
+```
+
+#### Accuracy - Mean Absolute Error
+
+```{r MAE,message=FALSE, warning=FALSE}
+
+Miami.test <-
+  Miami.test %>%
+  mutate(SalePrice.Predict = predict(reg, Miami.test),
+         SalePrice.Error = SalePrice.Predict - SalePrice,
+         SalePrice.AbsError = abs(SalePrice.Predict - SalePrice),
+         SalePrice.APE = (abs(SalePrice.Predict - SalePrice)) / SalePrice.Predict)
+
+mean(Miami.test$SalePrice.AbsError, na.rm = T)
+mean(Miami.test$SalePrice.APE, na.rm = T)
+
+hist(Miami.test$`SalePrice.AbsError`,xlab="Sales Price Absolute Error",
+     breaks=50, col="purple")
+```
+
+#### Spatial Corellation of error
+
+```{r Spatial_R, message=FALSE, warning=FALSE}
+
+# Adding in Spatial Correlation of Errors 
+
+Miami.testdistinct <- distinct (Miami.test,geometry,.keep_all=TRUE)
+coords.test <-  st_coordinates(Miami.testdistinct) 
+neighborList.test <- knn2nb(knearneigh(coords.test, k_nearest_neighbors))
+spatialWeights.test <- nb2listw(neighborList.test, style="W")
+Miami.testdistinct$lagPriceError <- lag.listw(spatialWeights.test, Miami.testdistinct$SalePrice.AbsError)
+
+ggplot(MiamiDFKnown, aes(x=lagPrice, y=SalePrice)) +
+  geom_point(colour = "#FA7800") +
+  geom_smooth(method = "lm", se = FALSE, colour = "#25CB10") +
+  labs(title = "Price as a function of the spatial lag of price",
+       caption = "Public Policy Analytics, Figure 6.6",
+       x = "Spatial lag of price (Mean price of 5 nearest neighbors)",
+       y = "Sale Price") +
+  plotTheme()
+
+ggplot(Miami.testdistinct, aes(x=lagPriceError, y=SalePrice)) +
+  geom_point(colour = "#FA7800") +
+  geom_smooth(method = "lm", se = FALSE, colour = "#25CB10") +
+  labs(title = "Error as a function of the spatial lag of price",
+       caption = "",
+       x = "Spatial lag of errors (Mean error of 5 nearest neighbors)",
+       y = "Sale Price") +
+  plotTheme()
+
+```
+
+#### Cross Validation
+
+```{r Cross_Validation, message=FALSE, warning=FALSE}
+
+# Cross Validation 
+fitControl <- trainControl(method = "cv", 
+                           number = 10,
+                           # savePredictions differs from book
+                           savePredictions = TRUE)
+
+
+# for k-folds CV
+
+reg.cv <-  
+  train(SalePrice ~ ., data = st_drop_geometry(MiamiDFKnown) %>%  
+              dplyr::select(SalePrice,ActualSqFt, Neighbourhood_name,MedHHInc, pctWhite, pctHispanic, worship_nn1,
+                            `8ftres3to8ftPool`,`2to4ftPool`,Whirpool,LuxuryPool, LotSize, park_nn4, bar_nn2, hospital_nn1,
+                            `3to6ftPool`,`3to8ftPool`,BedCat,Docks,lagPrice,parking_nn2,school_nn1, ElementarySchool,
+                            EffectiveYearBuilt,Zoning,Bath,Stories,logCoastDist,`Property.City`,office_nn3, dist.metro,Fence,`XFs_Elevator - Passenger`
+            ),  
+       method = "lm",  
+       trControl = fitControl,  
+       na.action = na.pass)
+
+reg.cv
+
+reg.cv$resample
+
+reg <- lm(SalePrice ~ ., data = st_drop_geometry(MiamiDFKnown) %>% 
+            dplyr::select(SalePrice,ActualSqFt, Neighbourhood_name,MedHHInc, pctWhite, pctHispanic, worship_nn1,
+                          `8ftres3to8ftPool`,`2to4ftPool`,Whirpool,LuxuryPool, LotSize, park_nn4, bar_nn2, hospital_nn1,
+                          `3to6ftPool`,`3to8ftPool`,BedCat,Docks,lagPrice,parking_nn2,school_nn1, ElementarySchool,
+                          EffectiveYearBuilt,Zoning,Bath,Stories,logCoastDist,`Property.City`,office_nn3, dist.metro,Fence,`XFs_Elevator - Passenger`))
+summ(reg)
+summary(reg)
+```
+
+#### Moran I's
+
+```{r MoranIs, message=FALSE, warning=FALSE}
+
+# Moran's I
+moranTest <- moran.mc(Miami.testdistinct$SalePrice.AbsError, 
+                      spatialWeights.test, nsim = 999)
+
+ggplot(as.data.frame(moranTest$res[c(1:999)]), aes(moranTest$res[c(1:999)])) +
+  geom_histogram(binwidth = 0.01) +
+  geom_vline(aes(xintercept = moranTest$statistic), colour = "#FA7800",size=1) +
+  scale_x_continuous(limits = c(-1, 1)) +
+  labs(title="Observed and permuted Moran's I",
+       subtitle= "Observed Moran's I in orange",
+       x="Moran's I",
+       y="Count",
+       caption="Public Policy Analytics, Figure 6.8") +
+  plotTheme()
+
+```
+
+#### Error by neighborhood
+
+```{r Neighbourhood, message=FALSE, message=FALSE}
+
+# Errors by Group
+nhood_sum <- Miami.test %>% 
+  group_by(Neighbourhood_name) %>%
+  summarize(meanPrice = mean(SalePrice, na.rm = T),
+            meanPrediction = mean(SalePrice.Predict, na.rm = T),
+            meanMAE = mean(SalePrice.AbsError, na.rm = T))
+
+nhood_sum %>% 
+  st_drop_geometry %>%
+  arrange(desc(meanMAE)) %>% 
+  kable() %>% kable_styling()
+
+# Errors by City
+city_sum <- Miami.test %>% 
+  group_by(Property.City) %>%
+  summarize(meanPrice = mean(SalePrice, na.rm = T),
+            meanPrediction = mean(SalePrice.Predict, na.rm = T),
+            meanMAE = mean(SalePrice.AbsError, na.rm = T))
+
+city_sum %>% 
+  st_drop_geometry %>%
+  arrange(desc(meanMAE)) %>% 
+  kable() %>% kable_styling()
+```
+
+#### Generalization
+
+```{r Generalization, message=FALSE, warning=FALSE}
+
+# Measure Generalizability
+## Mean Square Error train and test
+rmse.train <- caret::MAE(predict(reg), Miami.training$SalePrice)
+rmse.test  <- caret::MAE(reg_predict, Miami.test$SalePrice)
+
+cat("Train MAE: ", as.integer(rmse.train), " \n","Test MAE: ", as.integer(rmse.test))
+
+# Plotting accuracy metrics
+
+preds.train <- data.frame(pred   = predict(reg),
+                          actual = Miami.training$SalePrice,
+                          source = "training data")
+preds.test  <- data.frame(pred   = reg_predict,
+                          actual = Miami.test$SalePrice,
+                          source = "testing data")
+preds <- rbind(preds.train, preds.test)
+
+ggplot(preds, aes(x = pred, y = actual, color = source)) +
+  geom_point() +
+  geom_smooth(method = "lm", color = "green") +
+  geom_abline(color = "orange") +
+  coord_equal() +
+  theme_bw() +
+  facet_wrap(~source, ncol = 2) +
+  labs(title = "Comparing predictions to actual values",
+       x = "Predicted Value",
+       y = "Actual Value") +
+  theme(
+    legend.position = "none"
+  )
+```
