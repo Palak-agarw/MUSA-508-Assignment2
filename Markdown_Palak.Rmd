@@ -38,6 +38,7 @@ library(geosphere)
 library(fastDummies)
 library(FNN)
 library(viridis)
+library(stargazer)
 options(scipen=999)
 options(tigris_class = "sf")
 
@@ -299,13 +300,61 @@ MiamiDF$Docks <- ifelse(MiamiDF$`XFs_Dock - Wood on Light Posts`==1|MiamiDF$`XFs
                           MiamiDF$`XFs_Dock - Concrete Griders on Concrete Pilings`==1|MiamiDF$`XFs_Dock - Wood Girders on Concrete Pilings`==1|
                           MiamiDF$`XFs_Dock - Steel Pilings`==1,1,0)
 
+## Wrangle Elevator and Jacuzzi Columns
+MiamiDF$Elevator <- ifelse(MiamiDF$`XFs_Elevator - Passenger`==1,1,0)
+MiamiDF$Jacuzzi <- ifelse(MiamiDF$`XFs_Jacuzzi`==1,1,0)
+
+## Creating column for ZIP codes
+x <- vector(mode='list', length = 3503)
+spli <- strsplit(MiamiDF$Property.Zip, "-")
+for (val in spli){
+  x <- append(x, val[1])
+}
+MiamiDF <- 
+  MiamiDF %>%
+  mutate(Zip = as.numeric(x[3504:7006]))
+
+```
+### Converting it into spatial feature and adding neighborhoods
+
+```{r Spatial, message=FALSE}
+
 ## Converting into spatial object
 MiamiDF <- st_as_sf(MiamiDF)
 
 MiamiDF <-   st_centroid(MiamiDF)
 
-```
+Neighborhoods <- st_read("https://opendata.arcgis.com/datasets/2f54a0cbd67046f2bd100fb735176e6c_0.geojson")
 
+Neighborhoods <- st_transform(Neighborhoods,'ESRI:102658')
+
+Municipality <- st_read('https://opendata.arcgis.com/datasets/bd523e71861749959a7f12c9d0388d1c_0.geojson')
+
+Municipality <- st_transform(Municipality,'ESRI:102658')
+
+Municipality <- filter(Municipality, NAME == "MIAMI BEACH")
+
+Neighborhoods <- Neighborhoods %>%
+  rename( Neighbourhood_name = LABEL)
+
+Neighborhoods <- Neighborhoods %>% dplyr::select(-FID,-Shape_STAr,-Shape_STLe,-Shape__Area,-Shape__Length)
+
+Municipality <- Municipality %>%
+  rename( Neighbourhood_name = NAME) 
+  
+Municipality <- Municipality %>% dplyr::select(-FID,-MUNICUID,-MUNICUID,-FIPSCODE,-CREATEDBY, -CREATEDDATE, -MODIFIEDBY, 
+                                        -MODIFIEDDATE, -SHAPE_Area, -SHAPE_Length, -MUNICID)
+
+
+Municipality$Neighbourhood_name <- make.names(Municipality$Neighbourhood_name, unique=TRUE)
+
+Neighborhoods_combine <- rbind(Neighborhoods, Municipality)
+
+MiamiDF <- st_join(MiamiDF, Neighborhoods_combine, join = st_intersects) 
+
+MiamiDF$Neighbourhood_name <- ifelse(is.na(MiamiDF$Neighbourhood_name), "Haynesworth", MiamiDF$Neighbourhood_name) 
+
+```
 ### Amenities/Public services 
 
 While one is looking for houses, proximity to public services and amenities is one major factor for selection. Many factors can be considered, below are some of the amenities we looked in  :     
@@ -315,7 +364,8 @@ While one is looking for houses, proximity to public services and amenities is o
 * **Parks** 
 * **Places of worship**
 * **Parking**
-* **Work Centers**
+* **Work Centers**     
+* **Hospitals**    
 
 ```{r Public_services, message=FALSE}
 
@@ -326,8 +376,7 @@ metroStops <- metroStops %>% st_transform('ESRI:102658')
 
 # Plot of the metro stops
 ggplot() +
-  geom_sf(data=Neighborhoods)+
-  geom_sf(data=MiamiDFKnown)+
+  geom_sf(data=Neighborhoods_combine)+
   geom_sf(data=metroStops, 
           aes(colour = 'red' ),
           show.legend = "point", size= 1.2)
@@ -543,6 +592,25 @@ MiamiDF$NAME.y <- ifelse(is.na(MiamiDF$NAME.y), "OtherMS", MiamiDF$NAME.y)
 
 MiamiDF <- rename(MiamiDF,"HighSchool"="NAME","ElementarySchool"="NAME.x","MiddleSchool"="NAME.y")
 
+## Using nearest neighbor for schools
+
+school <- opq(bbox = c(xmin, ymin, xmax, ymax)) %>% 
+  add_osm_feature(key = 'amenity', value = c("school", "kindergarten")) %>%
+  osmdata_sf()
+
+
+school <- 
+  school$osm_points %>%
+  .[miami.base,]
+
+school <- school %>% st_transform('ESRI:102658')
+
+MiamiDF <-
+  MiamiDF %>% 
+  mutate(
+    school_nn1 = nn_function(st_c(MiamiDF), st_c(school), 1)) 
+
+
 ### Parks
 
 Parks <- st_read("https://opendata.arcgis.com/datasets/8c9528d3e1824db3b14ed53188a46291_0.geojson")
@@ -621,19 +689,41 @@ MiamiDF <-
     office_nn2 = nn_function(st_c(MiamiDF), st_c(st_centroid(office)), 5), 
     office_nn3 = nn_function(st_c(MiamiDF), st_c(st_centroid(office)), 10)) 
 
+
+## hospital 
+
+hospital <- opq(bbox = c(xmin, ymin, xmax, ymax)) %>% 
+  add_osm_feature(key = 'amenity', value = c("hospital")) %>%
+  osmdata_sf()
+
+hospital <- 
+  hospital$osm_points %>%
+  .[miami.base,]
+
+hospital <- hospital %>% st_transform('ESRI:102658')
+
+ggplot() +
+  geom_sf(data=miami.base, fill="black") +
+  geom_sf(data=parking, colour="red", size=.75)
+
+MiamiDF <-
+  MiamiDF %>% 
+  mutate(
+    hospital_nn1 = nn_function(st_c(MiamiDF), st_c(hospital), 1))
+
 ```
 
 ### Spatial Structures
 
 House sales are affected by spatial features ......    
-* **Neighbourhood**      
+* **Neighborhood**      
 * **Shoreline**     
 * **Sale Price around**  
 * **Median Rent** 
 * **Median Income**
 * **Racial Composition**
 
-```{r Spatial_Structure, message=FALSE}
+```{r Spatial_Structure, message=FALSE, warning=FALSE}
 
 # Join Neighborhood Data
 Neighborhoods <- st_read("https://opendata.arcgis.com/datasets/2f54a0cbd67046f2bd100fb735176e6c_0.geojson")
@@ -672,7 +762,7 @@ Coastline<-opq(bbox = c(xmin, ymin, xmax, ymax)) %>%
   add_osm_feature("natural", "coastline") %>%
   osmdata_sf()
 
-MiamiDF <- st_transform(MiamiDFKnown,'ESRI:37001' )
+MiamiDF <- st_transform(MiamiDF,'ESRI:37001' )
 
 #add to MiamiDFKnown and convert to miles
 MiamiDF <-
@@ -760,5 +850,12 @@ ggplot() +
   geom_sf(data=Miamitracts)
 
 MiamiDF <- st_join(MiamiDF, Miamitracts, join = st_intersects) 
+
+reg <- lm(SalePrice ~ ., data = st_drop_geometry(MiamiDF) %>% 
+            dplyr::select(SalePrice, Bed, Bath, Stories, YearBuilt,LivingSqFt))
+summ(reg)
+summary(reg)
+
+stargazer(reg)
 
 ```
