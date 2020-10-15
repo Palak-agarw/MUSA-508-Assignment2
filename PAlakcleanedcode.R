@@ -256,6 +256,16 @@ MiamiDF$Docks <- ifelse(MiamiDF$`XFs_Dock - Wood on Light Posts`==1|MiamiDF$`XFs
 MiamiDF$Elevator <- ifelse(MiamiDF$`XFs_Elevator - Passenger`==1,1,0)
 MiamiDF$Jacuzzi <- ifelse(MiamiDF$`XFs_Jacuzzi`==1,1,0)
 
+## Creating column for ZIP codes
+x <- vector(mode='list', length = 3503)
+spli <- strsplit(MiamiDF$Property.Zip, "-")
+for (val in spli){
+  x <- append(x, val[1])
+}
+MiamiDF <- 
+  MiamiDF %>%
+  mutate(Zip = as.numeric(x[3504:7006]))
+
 
 MiamiDF <- st_as_sf(MiamiDF)
 
@@ -291,15 +301,6 @@ Neighborhoods_combine <- rbind(Neighborhoods, Municipality)
 MiamiDF <- st_join(MiamiDF, Neighborhoods_combine, join = st_intersects) 
 
 MiamiDF$Neighbourhood_name <- ifelse(is.na(MiamiDF$Neighbourhood_name), "Haynesworth", MiamiDF$Neighbourhood_name) 
-
-x <- vector(mode='list', length = 3503)
-spli <- strsplit(MiamiDF$Property.Zip, "-")
-for (val in spli){
-  x <- append(x, val[1])
-}
-MiamiDF <- 
-  MiamiDF %>%
-  mutate(Zip = as.numeric(x[3504:7006]))
 
 #Transit Data 
 metroStops <- st_read("https://opendata.arcgis.com/datasets/ee3e2c45427e4c85b751d8ad57dd7b16_0.geojson") 
@@ -551,6 +552,29 @@ MiamiDF <-
     worship_nn2 = nn_function(st_c(MiamiDF), st_c(worship), 2), 
     worship_nn3 = nn_function(st_c(MiamiDF), st_c(worship), 10)) 
 
+
+## hospital 
+
+hospital <- opq(bbox = c(xmin, ymin, xmax, ymax)) %>% 
+  add_osm_feature(key = 'amenity', value = c("hospital")) %>%
+  osmdata_sf()
+
+hospital <- 
+  hospital$osm_points %>%
+  .[miami.base,]
+
+hospital <- hospital %>% st_transform('ESRI:102658')
+
+ggplot() +
+  geom_sf(data=miami.base, fill="black") +
+  geom_sf(data=parking, colour="red", size=.75)
+
+MiamiDF <-
+  MiamiDF %>% 
+  mutate(
+    hospital_nn1 = nn_function(st_c(MiamiDF), st_c(hospital), 1))
+
+
 ## Parking
 parking <- opq(bbox = c(xmin, ymin, xmax, ymax)) %>% 
   add_osm_feature(key = 'amenity', value = c("parking", "parking_space", "parking_entrance")) %>%
@@ -715,10 +739,10 @@ Miami.test     <- MiamiDFKnown[-inTrain,]
 
 # Regression  
 reg <- lm(SalePrice ~ ., data = st_drop_geometry(Miami.training) %>% 
-             dplyr::select(SalePrice,ActualSqFt, Neighbourhood_name,MedHHInc, Fence, ElementarySchool,
-                           `8ftres3to8ftPool`,`2to4ftPool`,Whirpool,LuxuryPool, LotSize, park_nn4, bar_nn2, office_nn3,
-                            `3to6ftPool`,`3to8ftPool`,BedCat,Docks,lagPrice, parking_nn2, logDistm, Elevator,
-                            EffectiveYearBuilt,Zoning,Bath,Stories,logCoastDist,`Property.City`, pctWhite, pctHispanic))
+             dplyr::select(SalePrice,ActualSqFt, Neighbourhood_name,MedHHInc, pctWhite, pctHispanic, worship_nn1,
+                           `8ftres3to8ftPool`,`2to4ftPool`,Whirpool,LuxuryPool, LotSize, park_nn4, bar_nn2, hospital_nn1,
+                           `3to6ftPool`,`3to8ftPool`,BedCat,Docks,lagPrice,parking_nn2,school_nn1, ElementarySchool,
+                           EffectiveYearBuilt,Zoning,Bath,Stories,logCoastDist,`Property.City`,office_nn3, dist.metro,Fence,`XFs_Elevator - Passenger`))
 summ(reg)
 summary(reg)
 
@@ -851,56 +875,32 @@ fitControl <- trainControl(method = "cv",
 
 
 # for k-folds CV
-reg.cv <- 
-  train(SalePrice ~ ., data = st_drop_geometry(Miami.training) %>% 
-             dplyr::select(SalePrice,ActualSqFt, Neighbourhood_name,MedHHInc, Fence, ElementarySchool,
-                           `8ftres3to8ftPool`,`2to4ftPool`,Whirpool,LuxuryPool, LotSize, park_nn4, bar_nn2, office_nn3,
-                           `3to6ftPool`,`3to8ftPool`,BedCat,Docks,lagPrice, parking_nn2, logDistm, Elevator, school_nn1,
-                           EffectiveYearBuilt,Zoning,Bath,Stories,logCoastDist,`Property.City`, pctWhite, pctHispanic
-          ), 
-        method = "lm", 
-        trControl = fitControl, 
-        na.action = na.pass)
-
-
-reg.cv
-
-reg.cv$resample
 
 reg.cv <-  
   train(SalePrice ~ ., data = st_drop_geometry(MiamiDFKnown) %>%  
-          dplyr::select(SalePrice,ActualSqFt, Neighbourhood_name,MedHHInc, pctWhite, pctHispanic,
-                        `8ftres3to8ftPool`,`2to4ftPool`,Whirpool,LuxuryPool, LotSize, park_nn4, bar_nn2,
-                        `3to6ftPool`,`3to8ftPool`,BedCat,Docks,lagPrice,parking_nn2,school_nn1, ElementarySchool,
-                        EffectiveYearBuilt,Zoning,Bath,Stories,logCoastDist,`Property.City`,office_nn3, dist.metro,Fence,`XFs_Elevator - Passenger`   
-                        
-          ),  
-        method = "lm",  
-        trControl = fitControl,  
-        na.action = na.pass)
+              dplyr::select(SalePrice,ActualSqFt, Neighbourhood_name,MedHHInc, pctWhite, pctHispanic, worship_nn1,
+                            `8ftres3to8ftPool`,`2to4ftPool`,Whirpool,LuxuryPool, LotSize, park_nn4, bar_nn2, hospital_nn1,
+                            `3to6ftPool`,`3to8ftPool`,BedCat,Docks,lagPrice,parking_nn2,school_nn1, ElementarySchool,
+                            EffectiveYearBuilt,Zoning,Bath,Stories,logCoastDist,`Property.City`,office_nn3, dist.metro,Fence,`XFs_Elevator - Passenger`
+            ),  
+       method = "lm",  
+       trControl = fitControl,  
+       na.action = na.pass)
 
 reg.cv
 
 reg.cv$resample
 
-reg.cv <-  
-  train(SalePrice ~ ., data = st_drop_geometry(MiamiDFKnown) %>%  
-          dplyr::select(SalePrice,ActualSqFt, Neighbourhood_name,MedHHInc, pctWhite, pctHispanic, worship_nn1,
-                        `8ftres3to8ftPool`,`2to4ftPool`,Whirpool,LuxuryPool, LotSize, park_nn4, bar_nn2,
-                        `3to6ftPool`,`3to8ftPool`,BedCat,Docks,lagPrice,parking_nn2,school_nn1, ElementarySchool,
-                        EffectiveYearBuilt,Zoning,Bath,Stories,logCoastDist,`Property.City`,office_nn3, dist.metro,Fence,`XFs_Elevator - Passenger`   
-                        
-          ),  
-        method = "lm",  
-        trControl = fitControl,  
-        na.action = na.pass)
-
-reg.cv
-
-reg.cv$resample
+reg <- lm(SalePrice ~ ., data = st_drop_geometry(MiamiDFKnown) %>% 
+            dplyr::select(SalePrice,ActualSqFt, Neighbourhood_name,MedHHInc, pctWhite, pctHispanic, worship_nn1,
+                          `8ftres3to8ftPool`,`2to4ftPool`,Whirpool,LuxuryPool, LotSize, park_nn4, bar_nn2, hospital_nn1,
+                          `3to6ftPool`,`3to8ftPool`,BedCat,Docks,lagPrice,parking_nn2,school_nn1, ElementarySchool,
+                          EffectiveYearBuilt,Zoning,Bath,Stories,logCoastDist,`Property.City`,office_nn3, dist.metro,Fence,`XFs_Elevator - Passenger`))
+summ(reg)
+summary(reg)
 
 secret_data <- filter(MiamiDF, toPredict == 1)
-secret_preds <- predict(your_model_here, newdata = secret_data)
-output_preds <- data.frame(prediction = secret_preds, Folio = secret_data$Folio, team_name = "YOUR TEAM NAME")
-write.csv(output_preds, "YOUR_TEAM_NAME.csv")
-The column names MUST to be "prediction", "Folio", and "team_name"
+secret_preds <- predict(reg, newdata = secret_data)
+output_preds <- data.frame(prediction = secret_preds, Folio = secret_data$Folio, team_name = "PaLe")
+write.csv(output_preds, "PaLe.csv")
+
