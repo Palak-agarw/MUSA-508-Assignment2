@@ -317,7 +317,7 @@ MiamiDF <-
 ```
 ### Converting it into spatial feature and adding neighborhoods
 
-```{r Spatial, message=FALSE}
+```{r Spatial, message=FALSE, warning=FALSE}
 
 ## Converting into spatial object
 MiamiDF <- st_as_sf(MiamiDF)
@@ -367,7 +367,7 @@ While one is looking for houses, proximity to public services and amenities is o
 * **Work Centers**     
 * **Hospitals**    
 
-```{r Public_services, message=FALSE}
+```{r Public_services, message=FALSE,warning=FALSE}
 
 #Transit Data 
 
@@ -725,36 +725,6 @@ House sales are affected by spatial features ......
 
 ```{r Spatial_Structure, message=FALSE, warning=FALSE}
 
-# Join Neighborhood Data
-Neighborhoods <- st_read("https://opendata.arcgis.com/datasets/2f54a0cbd67046f2bd100fb735176e6c_0.geojson")
-
-Neighborhoods <- st_transform(Neighborhoods,'ESRI:102658')
-
-Municipality <- st_read('https://opendata.arcgis.com/datasets/bd523e71861749959a7f12c9d0388d1c_0.geojson')
-
-Municipality <- st_transform(Municipality,'ESRI:102658')
-
-Municipality <- filter(Municipality, NAME == "MIAMI BEACH")
-
-Neighborhoods <- Neighborhoods %>%
-  rename( Neighbourhood_name = LABEL)
-
-Neighborhoods <- Neighborhoods %>% dplyr::select(-FID,-Shape_STAr,-Shape_STLe,-Shape__Area,-Shape__Length)
-
-Municipality <- Municipality %>%
-  rename( Neighbourhood_name = NAME) 
-  
-Municipality <- Municipality %>% dplyr::select(-FID,-MUNICUID,-MUNICUID,-FIPSCODE,-CREATEDBY, -CREATEDDATE, -MODIFIEDBY, 
-                                        -MODIFIEDDATE, -SHAPE_Area, -SHAPE_Length, -MUNICID)
-
-
-Municipality$Neighbourhood_name <- make.names(Municipality$Neighbourhood_name, unique=TRUE)
-
-Neighborhoods_combine <- rbind(Neighborhoods, Municipality)
-
-MiamiDF <- st_join(MiamiDF, Neighborhoods_combine, join = st_intersects) 
-
-
 ## Shoreline
 
 #Coastline Data
@@ -772,6 +742,8 @@ MiamiDF <-
 
 MiamiDF <- st_transform(MiamiDF,'ESRI:102658' )
 
+# Log transformation
+MiamiDF <- mutate(MiamiDF,logCoastDist=log(CoastDist))
 
 #dl data
 miami.base <- 
@@ -800,17 +772,15 @@ ggplot() + geom_sf(data=MiamiDF, aes(colour=dist.shore)) +
   scale_colour_viridis()
 
 
+
 ## Lag price
 
 k_nearest_neighbors = 5
-#MiamiDF <- distinct(MiamiDF,geometry,.keep_all=TRUE)
 coords <- st_coordinates(MiamiDF)
 neighborList <- knn2nb(knearneigh(coords, k_nearest_neighbors))
 spatialWeights <- nb2listw(neighborList, style="W")
 MiamiDF$lagPrice <- lag.listw(spatialWeights, MiamiDF$SalePrice)
 
-#MiamiDFKnownDistinct <- dplyr::select(MiamiDFKnownDistinct,geometry,lagPrice)
-#MiamiDFKnown <- st_join(MiamiDFKnown,MiamiDFKnownDistinct,left=TRUE)
 
 
 ## Census data
@@ -851,11 +821,12 @@ ggplot() +
 
 MiamiDF <- st_join(MiamiDF, Miamitracts, join = st_intersects) 
 
-reg <- lm(SalePrice ~ ., data = st_drop_geometry(MiamiDF) %>% 
-            dplyr::select(SalePrice, Bed, Bath, Stories, YearBuilt,LivingSqFt))
-summ(reg)
-summary(reg)
-
-stargazer(reg)
+MiamiDF$MedHHInc <- ifelse(is.na(MiamiDF$MedHHInc), 59223.68, MiamiDF$MedHHInc) 
 
 ```
+
+### OLS Regression 
+
+#### Split dataframe into training and testing datasets
+
+```{r Split, message=FALSE, warning=FALSE}
