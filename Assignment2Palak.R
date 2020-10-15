@@ -303,12 +303,16 @@ Miamitracts <-
          MedRent = B25058_001
   )
 
+Miamitracts <-
+  Miamitracts %>%
+  mutate(pctWhite = ifelse(TotalPop > 0, Whites / TotalPop * 100, 0),
+         pctHispanic = ifelse(TotalPop > 0, Hispanic / TotalPop * 100,0))
+
+
 ggplot() + 
   geom_sf(data=Miamitracts)
 
 MiamiDF <- st_join(MiamiDF, Miamitracts, join = st_intersects) 
-
-  ## Play with rent of census tracts
 
 # Remove Challenge Houses
 
@@ -746,6 +750,17 @@ reg <- lm(SalePrice ~ ., data = st_drop_geometry(MiamiDFKnown) %>%
 summ(reg)
 summary(reg)
 
+## Lag price
+
+k_nearest_neighbors = 5
+MiamiDFKnownDistinct <- distinct(MiamiDFKnown,geometry,.keep_all=TRUE)
+coords <- st_coordinates(MiamiDFKnownDistinct)
+neighborList <- knn2nb(knearneigh(coords, k_nearest_neighbors))
+spatialWeights <- nb2listw(neighborList, style="W")
+MiamiDFKnownDistinct$lagPrice <- lag.listw(spatialWeights, MiamiDFKnownDistinct$SalePrice)
+
+MiamiDFKnownDistinct <- dplyr::select(MiamiDFKnownDistinct,geometry,lagPrice)
+MiamiDFKnown <- st_join(MiamiDFKnown,MiamiDFKnownDistinct,left=TRUE)
 
 # External Model Validation
 ## set random seed
@@ -753,7 +768,7 @@ set.seed(121491)
 
 # get index for training sample
 inTrain <- caret::createDataPartition( 
-  y = paste(MiamiDFKnown$Neighbourhood_name,MiamiDFKnown$BedCat, MiamiDFKnown$NAME, MiamiDFKnown$NAME.x, MiamiDFKnown$NAME.y ), 
+  y = paste(MiamiDFKnown$Neighbourhood_name,MiamiDFKnown$BedCat, MiamiDFKnown$YearCat), 
   p = .60, list = FALSE)
 
 # split data into training and test, before comma is row, after comma is column
@@ -764,7 +779,7 @@ Miami.test     <- MiamiDFKnown[-inTrain,]
 reg5 <- lm(SalePrice ~ ., data = st_drop_geometry(Miami.training) %>% 
              dplyr::select(SalePrice,BedCat, Bath, Stories, YearCat,LivingSqFt,Patio,Fence,`3to8ftPool`,Whirpool,
                            `3to6ftPool`,`LuxuryPool`, NewDistance.cat, bar_nn2, bar_nn3, bar_nn4, Neighbourhood_name,
-                           CoastDist, park_nn4, park_nn5, CoastDist))
+                           CoastDist, park_nn4, park_nn5, CoastDist, lagPrice.y, MedHHInc, LotSize, ActualSqFt))
 
 
 summary(reg5)
@@ -840,7 +855,7 @@ reg.cv <-
   train(SalePrice ~ ., data = st_drop_geometry(MiamiDFKnown) %>% 
           dplyr::select(SalePrice,BedCat, Bath, Stories, YearCat,LivingSqFt,Patio,Fence,`3to8ftPool`,Whirpool,
                         `3to6ftPool`,`LuxuryPool`, NewDistance.cat, bar_nn2, bar_nn3, bar_nn4, Neighbourhood_name,
-                        CoastDist, park_nn4, park_nn5, office_nn2, office_nn3, CoastDist), 
+                        CoastDist, park_nn4, park_nn5, office_nn2, office_nn3, CoastDist, lagPrice), 
         method = "lm", 
         trControl = fitControl, 
         na.action = na.pass)
