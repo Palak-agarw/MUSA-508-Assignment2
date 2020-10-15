@@ -179,3 +179,63 @@ multipleRingBuffer <- function(inputPolygon, maxDistance, interval)
   #convert the allRings data frame to an sf data frame
   allRings <- st_as_sf(allRings)
 }
+
+## Read Miami Data
+
+MiamiDF <- st_read("studentsData.geojson")
+
+MiamiDF <- st_transform(MiamiDF,'ESRI:102658')
+
+MiamiDF <- dplyr::select(MiamiDF,-saleQual,-WVDB,-HEX,-GPAR,-County.2nd.HEX, 
+                         -County.Senior,-County.LongTermSenior,-County.Other.Exempt,
+                         -City.2nd.HEX,-City.Senior,-City.LongTermSenior,
+                         -City.Other.Exempt,-MillCode,-Land.Use,
+                         -Owner1,-Owner2,-Mailing.Address,-Mailing.City,
+                         -Mailing.State,-Mailing.Zip,-Mailing.Country,
+                         -Year,-Land,-Bldg,-Total,-Assessed,-County.Taxable,
+                         -City.Taxable,-Legal1,-Legal2,-Legal3,-Legal4,-Legal5,-Legal6,-Units)
+
+# Wrangle XF Columns
+MiamiDF<- mutate(MiamiDF,XFs=paste(XF1,XF2,XF3, sep=",")) %>%
+  dummy_cols(select_columns="XFs", split=",")
+
+MiamiDF$LuxuryPool<- ifelse(MiamiDF$`XFs_Luxury Pool - Best`==1 | MiamiDF$`XFs_Luxury Pool - Better`==1 | MiamiDF$`XFs_Luxury Pool - Good.`==1,1,0)
+
+MiamiDF$'3to6ftPool' <- ifelse(MiamiDF$`XFs_Pool COMM AVG 3-6' dpth`==1|MiamiDF$`XFs_Pool COMM BETTER 3-6' dpth`==1,1,0)
+
+MiamiDF$'3to8ftPool' <- ifelse(MiamiDF$`XFs_Pool 6' res BETTER 3-8' dpth`==1|MiamiDF$`XFs_Pool 6' res AVG 3-8' dpth`==1,1,0)
+
+MiamiDF <- rename(MiamiDF,`8ftres3to8ftPool`=`XFs_Pool 8' res BETTER 3-8' dpth`)
+
+MiamiDF <- rename(MiamiDF, Whirpool=`XFs_Whirlpool - Attached to Pool (whirlpool area only)`)
+
+MiamiDF <- rename(MiamiDF,`2to4ftPool`= `XFs_Pool - Wading - 2-4' depth`)
+
+MiamiDF <- dplyr::select(MiamiDF,-"XFs_Pool 6' res BETTER 3-8' dpth",
+                         -"XFs_Pool 6' res AVG 3-8' dpth",-"XFs_Luxury Pool - Best",
+                         -"XFs_Luxury Pool - Better",-"XFs_Luxury Pool - Good.",
+                         -"XFs_Pool COMM AVG 3-6' dpth",-"XFs_Pool COMM BETTER 3-6' dpth",
+                         -"XFs_large",-"XFs_elec",-"XFs_plumb",-"XFs_Tiki Hut - Standard Thatch roof w/poles",
+                         -"XFs_Tiki Hut - Good Thatch roof w/poles & electric",-"XFs_Tiki Hut - Better Thatch roof",
+                         -"XFs_Bomb Shelter - Concrete Block",-"XFs_Tennis Court - Asphalt or Clay" ) 
+
+
+# Wrangle Fence Columns
+MiamiDF$Fence <- ifelse(MiamiDF$`XFs_Aluminum Modular Fence`==1| MiamiDF$`XFs_Wood Fence`==1|MiamiDF$`XFs_Chain-link Fence 4-5 ft high`==1|MiamiDF$`XFs_Wrought Iron Fence`==1|MiamiDF$`XFs_Chain-link Fence 6-7 ft high`==1|MiamiDF$`XFs_Concrete Louver Fence`==1|MiamiDF$`XFs_Chain-link Fence 8-9 ft high`==1|MiamiDF$`XFs_Glass fences in backyard applications`==1,1,0)
+
+MiamiDF <- dplyr::select(MiamiDF,-"XFs_Aluminum Modular Fence",
+                         -"XFs_Wood Fence",-"XFs_Chain-link Fence 4-5 ft high",
+                         -"XFs_Wrought Iron Fence",-"XFs_Chain-link Fence 6-7 ft high",
+                         -"XFs_Concrete Louver Fence",-"XFs_Chain-link Fence 8-9 ft high",
+                         -"XFs_Glass fences in backyard applications")
+
+# Wrangle Patio Columns
+MiamiDF$Patio <- ifelse(MiamiDF$`XFs_Patio - Concrete Slab`==1|MiamiDF$`XFs_Patio - Concrete Slab w/Roof Aluminum or Fiber`==1|MiamiDF$`XFs_Patio - Wood Deck`==1|MiamiDF$`XFs_Patio - Marble`==1|MiamiDF$`XFs_Patio - Terrazzo`==1|MiamiDF$`XFs_Patio - Screened over Concrete Slab`==1|MiamiDF$`XFs_Patio - Exotic hardwood`==1|MiamiDF$`XFs_Patio - Concrete stamped or stained`==1,1,0)
+
+MiamiDF <- dplyr::select(MiamiDF,-"XFs_Patio - Concrete Slab",-"XFs_Patio - Concrete Slab w/Roof Aluminum or Fiber",
+                         -"XFs_Patio - Wood Deck",-"XFs_Patio - Marble",
+                         -"XFs_Patio - Terrazzo",-"XFs_Patio - Screened over Concrete Slab",
+                         -"XFs_Patio - Exotic hardwood",-"XFs_Patio - Concrete stamped or stained")
+
+## Wrangle Dock Columns
+MiamiDF$Docks <- ifelse(MiamiDF$`XFs_Dock - Wood on Light Posts`==1|MiamiDF$`XFs_Loading Dock/ Platform`==1|MiamiDF$`XFs_Dock - Concrete Griders on Concrete Pilings`==1|MiamiDF$`XFs_Dock - Wood Girders on Concrete Pilings`==1|MiamiDF$`XFs_Dock - Steel Pilings`==1,1,0)
