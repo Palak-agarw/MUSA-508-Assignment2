@@ -18,6 +18,8 @@ library(dplyr)
 library(osmdata)
 library(geosphere)
 library(fastDummies)
+library(FNN)
+library(viridis)
 options(scipen=999)
 options(tigris_class = "sf")
 
@@ -236,8 +238,7 @@ MiamiDF <- dplyr::select(MiamiDF,-"XFs_Patio - Concrete Slab",-"XFs_Patio - Conc
                  -"XFs_Patio - Terrazzo",-"XFs_Patio - Screened over Concrete Slab",
                  -"XFs_Patio - Exotic hardwood",-"XFs_Patio - Concrete stamped or stained")
 
-MiamiDFKnown$Docks <- ifelse(MiamiDFKnown$`XFs_Dock - Wood on Light Posts`==1|MiamiDFKnown$`XFs_Loading Dock/ Platform`==1|MiamiDFKnown$`XFs_Dock - Concrete Griders on Concrete Pilings`==1|MiamiDFKnown$`XFs_Dock - Wood Girders on Concrete Pilings`==1|MiamiDFKnown$`XFs_Dock - Steel Pilings`==1,1,0)
-
+MiamiDF$Docks <- ifelse(MiamiDF$`XFs_Dock - Wood on Light Posts`==1|MiamiDF$`XFs_Loading Dock/ Platform`==1|MiamiDF$`XFs_Dock - Concrete Griders on Concrete Pilings`==1|MiamiDF$`XFs_Dock - Wood Girders on Concrete Pilings`==1|MiamiDF$`XFs_Dock - Steel Pilings`==1,1,0)
 # Create Categorical Variables
 MiamiDF$YearCat <- cut(MiamiDF$YearBuilt, c(1900,1909,1919,1929,1939,1949,
                                             1959,1969,1979,1989,1999,2009,2019))
@@ -566,6 +567,34 @@ MiamiDFKnown <-
 
 MiamiDFKnown <- st_transform(MiamiDFKnown,'ESRI:102658' )
 
+
+#dl data
+miami.base <- 
+  st_read("https://opendata.arcgis.com/datasets/5ece0745e24b4617a49f2e098df8117f_0.geojson") %>%
+  st_transform('ESRI:102658') %>%
+  filter(NAME == "MIAMI BEACH" | NAME == "MIAMI") %>%
+  st_union()
+
+shoreline <-   st_read('https://opendata.arcgis.com/datasets/58386199cc234518822e5f34f65eb713_0.geojson') %>% 
+  st_transform('ESRI:102658')
+
+#find shoreline that intersects miami
+shoreline <- st_intersection(shoreline, miami.base)
+
+#transform shoreline to points
+shoreline.point <- st_cast(shoreline,"POINT") 
+
+#use nn_function for distance
+MiamiDFKnown <- 
+  MiamiDFKnown %>%
+  mutate(dist.shore = nn_function(st_coordinates(MiamiDFKnown), 
+                                  st_coordinates(shoreline.point), 1)/5280)
+
+ggplot() + geom_sf(data=MiamiDFKnown, aes(colour=dist.shore)) + 
+  geom_sf(data=shoreline) +
+  scale_colour_viridis()
+
+
 ## Regression R-sq = .7738
 reg <- lm(SalePrice ~ ., data = st_drop_geometry(MiamiDFKnown) %>% 
                      dplyr::select(SalePrice, Bed, Bath, Stories, YearCat,LivingSqFt, Neighbourhood_name, 
@@ -576,7 +605,6 @@ summary(reg)
 # School Attendance Areas
 ## Elementary Schools
 ## Doesn't include Miami Beach
-## Something is wrong with projection
 ElementarySchool <- st_read("https://opendata.arcgis.com/datasets/19f5d8dcd9714e6fbd9043ac7a50c6f6_0.geojson")
 
 ElementarySchool<- st_transform(ElementarySchool,'ESRI:102658') %>%
