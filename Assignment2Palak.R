@@ -185,14 +185,14 @@ MiamiDF <- st_read("studentsData.geojson")
 
 MiamiDF <- st_transform(MiamiDF,'ESRI:102658')
 
-MiamiDF <- dplyr::select(MiamiDF,-saleQual,-WVDB,-HEX,-GPAR,-County.2nd.HEX,
+MiamiDF <- dplyr::select(MiamiDF,-saleQual,-WVDB,-HEX,-GPAR,-County.2nd.HEX, 
                          -County.Senior,-County.LongTermSenior,-County.Other.Exempt,
                          -City.2nd.HEX,-City.Senior,-City.LongTermSenior,
                          -City.Other.Exempt,-MillCode,-Land.Use,
                          -Owner1,-Owner2,-Mailing.Address,-Mailing.City,
-                         -Mailing.State,-Mailing.Zip,-Mailing.Country)
-
-MiamiDF <- st_as_sf(MiamiDF)
+                         -Mailing.State,-Mailing.Zip,-Mailing.Country,
+                         -Year,-Land,-Bldg,-Total,-Assessed,-County.Taxable,
+                         -City.Taxable,-Legal1,-Legal2,-Legal3,-Legal4,-Legal5,-Legal6,-Units)
 
 # Wrangle XF Columns
 MiamiDF<- mutate(MiamiDF,XFs=paste(XF1,XF2,XF3, sep=",")) %>%
@@ -235,6 +235,8 @@ MiamiDF <- dplyr::select(MiamiDF,-"XFs_Patio - Concrete Slab",-"XFs_Patio - Conc
                  -"XFs_Patio - Wood Deck",-"XFs_Patio - Marble",
                  -"XFs_Patio - Terrazzo",-"XFs_Patio - Screened over Concrete Slab",
                  -"XFs_Patio - Exotic hardwood",-"XFs_Patio - Concrete stamped or stained")
+
+MiamiDFKnown$Docks <- ifelse(MiamiDFKnown$`XFs_Dock - Wood on Light Posts`==1|MiamiDFKnown$`XFs_Loading Dock/ Platform`==1|MiamiDFKnown$`XFs_Dock - Concrete Griders on Concrete Pilings`==1|MiamiDFKnown$`XFs_Dock - Wood Girders on Concrete Pilings`==1|MiamiDFKnown$`XFs_Dock - Steel Pilings`==1,1,0)
 
 # Create Categorical Variables
 MiamiDF$YearCat <- cut(MiamiDF$YearBuilt, c(1900,1909,1919,1929,1939,1949,
@@ -630,9 +632,11 @@ MiamiDFKnown <- st_join(MiamiDFKnown, ElementarySchool, join = st_intersects)
 MiamiDFKnown <- st_join(MiamiDFKnown, MiddleSchool, join = st_intersects) 
 MiamiDFKnown <- st_join(MiamiDFKnown, HighSchool, join = st_intersects) 
 
-MiamiDFKnown$NAME <- ifelse(is.na(MiamiDFKnown$NAME), "Other", MiamiDFKnown$NAME)
-MiamiDFKnown$NAME.x <- ifelse(is.na(MiamiDFKnown$NAME.x), "Other", MiamiDFKnown$NAME.x)
-MiamiDFKnown$NAME.y <- ifelse(is.na(MiamiDFKnown$NAME.y), "Other", MiamiDFKnown$NAME.y)
+MiamiDFKnown$NAME <- ifelse(is.na(MiamiDFKnown$NAME), "OtherHS", MiamiDFKnown$NAME) 
+MiamiDFKnown$NAME.x <- ifelse(is.na(MiamiDFKnown$NAME.x), "OtherES", MiamiDFKnown$NAME.x)
+MiamiDFKnown$NAME.y <- ifelse(is.na(MiamiDFKnown$NAME.y), "OtherMS", MiamiDFKnown$NAME.y)
+
+MiamiDFKnown <- rename(MiamiDFKnown,"HighSchool"="NAME","ElementarySchool"="NAME.x","MiddleSchool"="NAME.y")
 
 # Regression R-sq = .7738
 
@@ -921,3 +925,54 @@ ggplot() +
                     name="Quintile\nBreaks") +
   mapTheme() +
   labs(title="Absolute sale price errors on the OOF set by Neighborhood")
+
+# Adding in Spatial Correlation of Errors Stuff From Lab 
+k_nearest_neighbors = 5
+## k nearest neighbors \
+### Try w/o distinct
+MiamiDFKnownDistinct <- distinct(MiamiDFKnown,geometry,.keep_all=TRUE) 
+coords <- st_coordinates(MiamiDFKnownDistinct)
+neighborList <- knn2nb(knearneigh(coords, k_nearest_neighbors))
+spatialWeights <- nb2listw(neighborList, style="W")
+MiamiDFKnownDistinct$lagPrice <- lag.listw(spatialWeights, MiamiDFKnownDistinct$SalePrice)
+
+## errors
+Miami.testdistinct <- distinct (Miami.test,geometry,.keep_all=TRUE)
+coords.test <-  st_coordinates(Miami.testdistinct) 
+neighborList.test <- knn2nb(knearneigh(coords.test, k_nearest_neighbors))
+spatialWeights.test <- nb2listw(neighborList.test, style="W")
+Miami.testdistinct$lagPriceError <- lag.listw(spatialWeights.test, Miami.testdistinct$SalePrice.AbsError)
+
+ggplot(MiamiDFKnownDistinct, aes(x=lagPrice, y=SalePrice)) +
+  geom_point(colour = "#FA7800") +
+  geom_smooth(method = "lm", se = FALSE, colour = "#25CB10") +
+  labs(title = "Price as a function of the spatial lag of price",
+       caption = "Public Policy Analytics, Figure 6.6",
+       x = "Spatial lag of price (Mean price of 5 nearest neighbors)",
+       y = "Sale Price") +
+  plotTheme()
+
+ggplot(Miami.testdistinct, aes(x=lagPriceError, y=SalePrice)) +
+  geom_point(colour = "#FA7800") +
+  geom_smooth(method = "lm", se = FALSE, colour = "#25CB10") +
+  labs(title = "Error as a function of the spatial lag of price",
+       caption = "",
+       x = "Spatial lag of errors (Mean error of 5 nearest neighbors)",
+       y = "Sale Price") +
+  plotTheme()
+
+# Moran's I
+moranTest <- moran.mc(Miami.testdistinct$SalePrice.AbsError, 
+                      spatialWeights.test, nsim = 999)
+
+ggplot(as.data.frame(moranTest$res[c(1:999)]), aes(moranTest$res[c(1:999)])) +
+  geom_histogram(binwidth = 0.01) +
+  geom_vline(aes(xintercept = moranTest$statistic), colour = "#FA7800",size=1) +
+  scale_x_continuous(limits = c(-1, 1)) +
+  labs(title="Observed and permuted Moran's I",
+       subtitle= "Observed Moran's I in orange",
+       x="Moran's I",
+       y="Count",
+       caption="Public Policy Analytics, Figure 6.8") +
+  plotTheme()
+
