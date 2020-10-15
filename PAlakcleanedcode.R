@@ -252,6 +252,11 @@ MiamiDF$Docks <- ifelse(MiamiDF$`XFs_Dock - Wood on Light Posts`==1|MiamiDF$`XFs
                           MiamiDF$`XFs_Dock - Concrete Griders on Concrete Pilings`==1|MiamiDF$`XFs_Dock - Wood Girders on Concrete Pilings`==1|
                           MiamiDF$`XFs_Dock - Steel Pilings`==1,1,0)
 
+## Wrangle Elevator and Jacuzzi Columns
+MiamiDF$Elevator <- ifelse(MiamiDF$`XFs_Elevator - Passenger`==1,1,0)
+MiamiDF$Jacuzzi <- ifelse(MiamiDF$`XFs_Jacuzzi`==1,1,0)
+
+
 MiamiDF <- st_as_sf(MiamiDF)
 
 MiamiDF <-   st_centroid(MiamiDF)
@@ -287,6 +292,14 @@ MiamiDF <- st_join(MiamiDF, Neighborhoods_combine, join = st_intersects)
 
 MiamiDF$Neighbourhood_name <- ifelse(is.na(MiamiDF$Neighbourhood_name), "Haynesworth", MiamiDF$Neighbourhood_name) 
 
+x <- vector(mode='list', length = 3503)
+spli <- strsplit(MiamiDF$Property.Zip, "-")
+for (val in spli){
+  x <- append(x, val[1])
+}
+MiamiDF <- 
+  MiamiDF %>%
+  mutate(Zip = as.numeric(x[3504:7006]))
 
 #Transit Data 
 metroStops <- st_read("https://opendata.arcgis.com/datasets/ee3e2c45427e4c85b751d8ad57dd7b16_0.geojson") 
@@ -485,6 +498,22 @@ MiamiDF$NAME.y <- ifelse(is.na(MiamiDF$NAME.y), "OtherMS", MiamiDF$NAME.y)
 
 MiamiDF <- rename(MiamiDF,"HighSchool"="NAME","ElementarySchool"="NAME.x","MiddleSchool"="NAME.y")
 
+school <- opq(bbox = c(xmin, ymin, xmax, ymax)) %>% 
+  add_osm_feature(key = 'amenity', value = c("school", "kindergarten")) %>%
+  osmdata_sf()
+
+school <- school %>% st_transform('ESRI:102658')
+
+school <- 
+  school$osm_points %>%
+  .[miami.base,]
+
+
+MiamiDF <-
+  MiamiDF %>% 
+  mutate(
+    school_nn1 = nn_function(st_c(MiamiDF), st_c(school), 1)) 
+
 ### Parks
 Parks <- st_read("https://opendata.arcgis.com/datasets/8c9528d3e1824db3b14ed53188a46291_0.geojson")
 
@@ -665,6 +694,9 @@ MiamiDF <- st_join(MiamiDF, Miamitracts, join = st_intersects)
 
 MiamiDF$MedHHInc <- ifelse(is.na(MiamiDF$MedHHInc), 59223.68, MiamiDF$MedHHInc) 
 
+MiamiDF <- mutate(MiamiDF,logDistm=log(dist.metro))
+
+
 # Remove Challenge Houses
 MiamiDFKnown <- MiamiDF[!(MiamiDF$SalePrice==0),]
 
@@ -683,15 +715,20 @@ Miami.test     <- MiamiDFKnown[-inTrain,]
 
 # Regression  
 reg <- lm(SalePrice ~ ., data = st_drop_geometry(Miami.training) %>% 
-             dplyr::select(SalePrice,ActualSqFt, Neighbourhood_name,MedHHInc,
-                                                      `8ftres3to8ftPool`,`2to4ftPool`,Whirpool,LuxuryPool,
-                                                      `3to6ftPool`,`3to8ftPool`,BedCat,Docks,lagPrice,
-                                                      EffectiveYearBuilt,Zoning,Bath,Stories,logCoastDist,`Property.City`))
+             dplyr::select(SalePrice,ActualSqFt, Neighbourhood_name,MedHHInc, Fence, ElementarySchool,
+                           `8ftres3to8ftPool`,`2to4ftPool`,Whirpool,LuxuryPool, LotSize, park_nn4, bar_nn2, office_nn3,
+                            `3to6ftPool`,`3to8ftPool`,BedCat,Docks,lagPrice, parking_nn2, logDistm, Elevator,
+                            EffectiveYearBuilt,Zoning,Bath,Stories,logCoastDist,`Property.City`, pctWhite, pctHispanic))
 summ(reg)
 summary(reg)
 
 ## predicting on new data
 reg_predict <- predict(reg, newdata = Miami.test, na.action = na.pass)
+
+rmse.train <- caret::MAE(predict(reg), Miami.training$SalePrice)
+rmse.test  <- caret::MAE(reg_predict, Miami.test$SalePrice)
+
+cat("Train MAE: ", as.integer(rmse.train), " \n","Test MAE: ", as.integer(rmse.test))
 
 Miami.test <-
   Miami.test %>%
@@ -803,3 +840,67 @@ ggplot(preds, aes(x = pred, y = actual, color = source)) +
   theme(
     legend.position = "none"
   )
+
+## Cross Validation
+
+# Cross Validation 
+fitControl <- trainControl(method = "cv", 
+                           number = 10,
+                           # savePredictions differs from book
+                           savePredictions = TRUE)
+
+
+# for k-folds CV
+reg.cv <- 
+  train(SalePrice ~ ., data = st_drop_geometry(Miami.training) %>% 
+             dplyr::select(SalePrice,ActualSqFt, Neighbourhood_name,MedHHInc, Fence, ElementarySchool,
+                           `8ftres3to8ftPool`,`2to4ftPool`,Whirpool,LuxuryPool, LotSize, park_nn4, bar_nn2, office_nn3,
+                           `3to6ftPool`,`3to8ftPool`,BedCat,Docks,lagPrice, parking_nn2, logDistm, Elevator, school_nn1,
+                           EffectiveYearBuilt,Zoning,Bath,Stories,logCoastDist,`Property.City`, pctWhite, pctHispanic
+          ), 
+        method = "lm", 
+        trControl = fitControl, 
+        na.action = na.pass)
+
+
+reg.cv
+
+reg.cv$resample
+
+reg.cv <-  
+  train(SalePrice ~ ., data = st_drop_geometry(MiamiDFKnown) %>%  
+          dplyr::select(SalePrice,ActualSqFt, Neighbourhood_name,MedHHInc, pctWhite, pctHispanic,
+                        `8ftres3to8ftPool`,`2to4ftPool`,Whirpool,LuxuryPool, LotSize, park_nn4, bar_nn2,
+                        `3to6ftPool`,`3to8ftPool`,BedCat,Docks,lagPrice,parking_nn2,school_nn1, ElementarySchool,
+                        EffectiveYearBuilt,Zoning,Bath,Stories,logCoastDist,`Property.City`,office_nn3, dist.metro,Fence,`XFs_Elevator - Passenger`   
+                        
+          ),  
+        method = "lm",  
+        trControl = fitControl,  
+        na.action = na.pass)
+
+reg.cv
+
+reg.cv$resample
+
+reg.cv <-  
+  train(SalePrice ~ ., data = st_drop_geometry(MiamiDFKnown) %>%  
+          dplyr::select(SalePrice,ActualSqFt, Neighbourhood_name,MedHHInc, pctWhite, pctHispanic, worship_nn1,
+                        `8ftres3to8ftPool`,`2to4ftPool`,Whirpool,LuxuryPool, LotSize, park_nn4, bar_nn2,
+                        `3to6ftPool`,`3to8ftPool`,BedCat,Docks,lagPrice,parking_nn2,school_nn1, ElementarySchool,
+                        EffectiveYearBuilt,Zoning,Bath,Stories,logCoastDist,`Property.City`,office_nn3, dist.metro,Fence,`XFs_Elevator - Passenger`   
+                        
+          ),  
+        method = "lm",  
+        trControl = fitControl,  
+        na.action = na.pass)
+
+reg.cv
+
+reg.cv$resample
+
+secret_data <- filter(MiamiDF, toPredict == 1)
+secret_preds <- predict(your_model_here, newdata = secret_data)
+output_preds <- data.frame(prediction = secret_preds, Folio = secret_data$Folio, team_name = "YOUR TEAM NAME")
+write.csv(output_preds, "YOUR_TEAM_NAME.csv")
+The column names MUST to be "prediction", "Folio", and "team_name"
