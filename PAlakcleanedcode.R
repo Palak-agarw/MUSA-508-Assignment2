@@ -308,8 +308,7 @@ metroStops <- metroStops %>% st_transform('ESRI:102658')
 
 # Plot of the metro stops
 ggplot() +
-  geom_sf(data=Neighborhoods)+
-  geom_sf(data=MiamiDF)+
+  geom_sf(data=Neighborhoods_combine)+
   geom_sf(data=metroStops, 
           aes(colour = 'red' ),
           show.legend = "point", size= 1.2)
@@ -383,7 +382,6 @@ MiamiDF <-MiamiDF %>%mutate(dist.metro = nn_function(st_coordinates(MiamiDF),
                                   st_coordinates(metroStops), 1)/5280)
 
 MiamiDF <-
-  
   MiamiDF %>%
   mutate(dist.metro.cat = case_when(
     dist.metro >= 0 & dist.metro < 0.25  ~ "Less than Quater Mile",
@@ -499,16 +497,25 @@ MiamiDF$NAME.y <- ifelse(is.na(MiamiDF$NAME.y), "OtherMS", MiamiDF$NAME.y)
 
 MiamiDF <- rename(MiamiDF,"HighSchool"="NAME","ElementarySchool"="NAME.x","MiddleSchool"="NAME.y")
 
+miami.base <- 
+  st_read("https://opendata.arcgis.com/datasets/5ece0745e24b4617a49f2e098df8117f_0.geojson") %>%
+  filter(NAME == "MIAMI BEACH" | NAME == "MIAMI") %>%
+  st_union()
+
+xmin = st_bbox(miami.base)[[1]]
+ymin = st_bbox(miami.base)[[2]]
+xmax = st_bbox(miami.base)[[3]]  
+ymax = st_bbox(miami.base)[[4]]
+
 school <- opq(bbox = c(xmin, ymin, xmax, ymax)) %>% 
   add_osm_feature(key = 'amenity', value = c("school", "kindergarten")) %>%
   osmdata_sf()
-
-school <- school %>% st_transform('ESRI:102658')
 
 school <- 
   school$osm_points %>%
   .[miami.base,]
 
+school <- school %>% st_transform('ESRI:102658')
 
 MiamiDF <-
   MiamiDF %>% 
@@ -717,9 +724,8 @@ ggplot() +
 MiamiDF <- st_join(MiamiDF, Miamitracts, join = st_intersects) 
 
 MiamiDF$MedHHInc <- ifelse(is.na(MiamiDF$MedHHInc), 59223.68, MiamiDF$MedHHInc) 
-
-MiamiDF <- mutate(MiamiDF,logDistm=log(dist.metro))
-
+MiamiDF$pctWhite <- ifelse(is.na(MiamiDF$pctWhite), 50, MiamiDF$pctWhite) 
+MiamiDF$pctHispanic <- ifelse(is.na(MiamiDF$pctHispanic), 50, MiamiDF$pctHispanic) 
 
 # Remove Challenge Houses
 MiamiDFKnown <- MiamiDF[!(MiamiDF$SalePrice==0),]
@@ -739,7 +745,7 @@ Miami.test     <- MiamiDFKnown[-inTrain,]
 
 # Regression  
 reg <- lm(SalePrice ~ ., data = st_drop_geometry(Miami.training) %>% 
-             dplyr::select(SalePrice,ActualSqFt, Neighbourhood_name,MedHHInc, pctWhite, pctHispanic, worship_nn1,
+             dplyr::select(SalePrice,ActualSqFt, Neighbourhood_name, MedHHInc, pctWhite, pctHispanic, worship_nn1,
                            `8ftres3to8ftPool`,`2to4ftPool`,Whirpool,LuxuryPool, LotSize, park_nn4, bar_nn2, hospital_nn1,
                            `3to6ftPool`,`3to8ftPool`,BedCat,Docks,lagPrice,parking_nn2,school_nn1, ElementarySchool,
                            EffectiveYearBuilt,Zoning,Bath,Stories,logCoastDist,`Property.City`,office_nn3, dist.metro,Fence,`XFs_Elevator - Passenger`))
@@ -890,14 +896,6 @@ reg.cv <-
 reg.cv
 
 reg.cv$resample
-
-reg <- lm(SalePrice ~ ., data = st_drop_geometry(MiamiDFKnown) %>% 
-            dplyr::select(SalePrice,ActualSqFt, Neighbourhood_name,MedHHInc, pctWhite, pctHispanic, worship_nn1,
-                          `8ftres3to8ftPool`,`2to4ftPool`,Whirpool,LuxuryPool, LotSize, park_nn4, bar_nn2, hospital_nn1,
-                          `3to6ftPool`,`3to8ftPool`,BedCat,Docks,lagPrice,parking_nn2,school_nn1, ElementarySchool,
-                          EffectiveYearBuilt,Zoning,Bath,Stories,logCoastDist,`Property.City`,office_nn3, dist.metro,Fence,`XFs_Elevator - Passenger`))
-summ(reg)
-summary(reg)
 
 secret_data <- filter(MiamiDF, toPredict == 1)
 secret_preds <- predict(reg, newdata = secret_data)
