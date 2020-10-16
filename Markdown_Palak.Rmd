@@ -5,9 +5,9 @@ date: "October 16th, 2020"
 output:
   html_document:
     code_folding: hide
-  toc: true
-  toc_float: true
-  toc_depth: 3
+    toc: true
+    toc_float: true
+    toc_depth: 3
 ---
 
 # Introduction 
@@ -211,7 +211,7 @@ multipleRingBuffer <- function(inputPolygon, maxDistance, interval)
 }
 ```
 
-### Data Wrangling
+# Data Wrangling
 ```{r load_data, message = FALSE, warning=FALSE, results=FALSE, echo = FALSE}
 MiamiDF <- st_read("studentsData.geojson")
 MiamiDF <- st_transform(MiamiDF,'ESRI:102658')
@@ -226,8 +226,8 @@ MiamiDF <- dplyr::select(MiamiDF,-saleQual,-WVDB,-HEX,-GPAR,-County.2nd.HEX,
                     -Legal6,-Units)
 ```
 
-# Data
-## Internal Characteristics 
+## Data
+### Internal Characteristics 
 
 First we looked at the internal characteristics of the houses. We considered features associated with the number of bedrooms, number of bathrooms, living square feet, actual square feet, year built, effective year built, stories, pools, jacuzzis, fences, patios, docks, and elevators. For number of bedrooms and year built, we tested both discrete and categorical variables in our model.
 
@@ -300,7 +300,7 @@ MiamiDF <-   st_centroid(MiamiDF)
 
 ```
 
-## Amenities/Public services 
+### Amenities/Public services 
 
 Proximity to public services and amenities can add value to houses. To get this data we made use of Open Street map as well as other open data portals. We considered the following public services and amenities when building our model:            
 * **Transit Stops**                
@@ -1021,7 +1021,7 @@ reg <- lm(SalePrice ~ ., data = st_drop_geometry(Miami.training) %>%
                            EffectiveYearBuilt,Zoning,Bath,Stories,logCoastDist,`Property.City`,office_nn3, dist.metro,Fence,`XFs_Elevator - Passenger`))
 
 summ(reg)
-summary(reg)
+#summary(reg)
 
 ## predicting on new data
 reg_predict <- predict(reg, newdata = Miami.test, na.action = na.pass)
@@ -1266,7 +1266,7 @@ reg.cv <-
 
 reg.cv
 
-reg.cv$resample
+#reg.cv$resample
 
 ```
 
