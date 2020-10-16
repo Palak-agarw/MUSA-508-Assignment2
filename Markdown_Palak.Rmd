@@ -734,7 +734,7 @@ Coastline<-opq(bbox = c(xmin, ymin, xmax, ymax)) %>%
 
 MiamiDF <- st_transform(MiamiDF,'ESRI:37001' )
 
-#add to MiamiDFKnown and convert to miles
+#add to MiamiDF and convert to miles
 MiamiDF <-
   MiamiDF %>%  
   mutate(CoastDist=(geosphere::dist2Line(p=st_coordinates(MiamiDF),
@@ -821,7 +821,9 @@ ggplot() +
 
 MiamiDF <- st_join(MiamiDF, Miamitracts, join = st_intersects) 
 
-MiamiDF$MedHHInc <- ifelse(is.na(MiamiDF$MedHHInc), 59223.68, MiamiDF$MedHHInc) 
+MiamiDF$MedHHInc <- ifelse(is.na(MiamiDF$MedHHInc), 59223.68, MiamiDF$MedHHInc)
+MiamiDF$pctWhite <- ifelse(is.na(MiamiDF$pctWhite), 90, MiamiDF$pctWhite) 
+MiamiDF$pctHispanic <- ifelse(is.na(MiamiDF$pctHispanic), 90, MiamiDF$pctHispanic) 
 
 ```
 
@@ -944,13 +946,6 @@ reg.cv
 
 reg.cv$resample
 
-reg <- lm(SalePrice ~ ., data = st_drop_geometry(MiamiDFKnown) %>% 
-            dplyr::select(SalePrice,ActualSqFt, Neighbourhood_name,MedHHInc, pctWhite, pctHispanic, worship_nn1,
-                          `8ftres3to8ftPool`,`2to4ftPool`,Whirpool,LuxuryPool, LotSize, park_nn4, bar_nn2, hospital_nn1,
-                          `3to6ftPool`,`3to8ftPool`,BedCat,Docks,lagPrice,parking_nn2,school_nn1, ElementarySchool,
-                          EffectiveYearBuilt,Zoning,Bath,Stories,logCoastDist,`Property.City`,office_nn3, dist.metro,Fence,`XFs_Elevator - Passenger`))
-summ(reg)
-summary(reg)
 ```
 
 #### Moran I's
