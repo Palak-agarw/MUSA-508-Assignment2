@@ -18,6 +18,7 @@ library(dplyr)
 library(osmdata)
 library(geosphere)
 library(fastDummies)
+library(stargazer)
 options(scipen=999)
 options(tigris_class = "sf")
 
@@ -258,6 +259,33 @@ MiamiDF <- st_as_sf(MiamiDF)
 
 MiamiDF <-   st_centroid(MiamiDF)
 
+# Join Neighborhood Data
+Neighborhoods <- st_read("https://opendata.arcgis.com/datasets/2f54a0cbd67046f2bd100fb735176e6c_0.geojson")
+
+Neighborhoods <- st_transform(Neighborhoods,'ESRI:102658')
+
+Municipality <- st_read('https://opendata.arcgis.com/datasets/bd523e71861749959a7f12c9d0388d1c_0.geojson')
+
+Municipality <- st_transform(Municipality,'ESRI:102658')
+
+Municipality <- filter(Municipality, NAME == "MIAMI BEACH")
+
+Neighborhoods <- Neighborhoods %>%
+  rename( Neighbourhood_name = LABEL)
+
+Neighborhoods <- Neighborhoods %>% dplyr::select(-FID,-Shape_STAr,-Shape_STLe,-Shape__Area,-Shape__Length)
+
+Municipality <- Municipality %>%
+  rename( Neighbourhood_name = NAME) 
+
+Municipality <- Municipality %>% dplyr::select(-FID,-MUNICUID,-MUNICUID,-FIPSCODE,-CREATEDBY, -CREATEDDATE, -MODIFIEDBY, 
+                                               -MODIFIEDDATE, -SHAPE_Area, -SHAPE_Length, -MUNICID)
+
+
+Municipality$Neighbourhood_name <- make.names(Municipality$Neighbourhood_name, unique=TRUE)
+
+Neighborhoods_combine <- rbind(Neighborhoods, Municipality)
+
 #Transit Data 
 
 metroStops <- st_read("https://opendata.arcgis.com/datasets/ee3e2c45427e4c85b751d8ad57dd7b16_0.geojson") 
@@ -266,7 +294,7 @@ metroStops <- metroStops %>% st_transform('ESRI:102658')
 # Plot of the metro stops
 ggplot() +
   geom_sf(data=Neighborhoods)+
-  geom_sf(data=MiamiDFKnown)+
+  geom_sf(data=MiamiDF)+
   geom_sf(data=metroStops, 
           aes(colour = 'red' ),
           show.legend = "point", size= 1.2)
@@ -598,7 +626,7 @@ Coastline<-opq(bbox = c(xmin, ymin, xmax, ymax)) %>%
   add_osm_feature("natural", "coastline") %>%
   osmdata_sf()
 
-MiamiDF <- st_transform(MiamiDFKnown,'ESRI:37001' )
+MiamiDF <- st_transform(MiamiDF,'ESRI:37001' )
 
 #add to MiamiDFKnown and convert to miles
 MiamiDF <-
@@ -685,3 +713,16 @@ ggplot() +
   geom_sf(data=Miamitracts)
 
 MiamiDF <- st_join(MiamiDF, Miamitracts, join = st_intersects) 
+
+reg <- lm(SalePrice ~ ., data = st_drop_geometry(MiamiDF) %>% 
+            dplyr::select(SalePrice, Bed, Bath, Stories, YearBuilt,LivingSqFt))
+summ(reg)
+summary(reg)
+
+DF <- st_drop_geometry(MiamiDF)
+
+library(stargazer)
+
+
+stargazer(MiamiDF,type = "text", title="Descriptive statistics", 
+          covariate.labels= c("SalePrice", "Bed", "Bath", "Stories", "YearBuilt","LivingSqFt"))
