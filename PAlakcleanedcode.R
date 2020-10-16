@@ -902,3 +902,132 @@ secret_preds <- predict(reg, newdata = secret_data)
 output_preds <- data.frame(prediction = secret_preds, Folio = secret_data$Folio, team_name = "PaLe")
 write.csv(output_preds, "PaLe.csv")
 
+
+## Summary Statistics
+### Internal Characteristics
+data.frame(Internal_Characteristics = c("LivingSqFt", "EffectiveYearBuilt", "SalePrice", "ActualSqFt", "LotSize","Bath","Stories", "Bed"),
+           Description = c("Living Sq Ft", "Age adjusted for Renovation or neglect", "Last sale price", "Updated Living SqFt",
+                           "Size of the Lot", "Number of Bathrooms", "Number of Stories", "Number of Bedrooms"),
+           Mean = c(mean(MiamiDF$LivingSqFt), mean(MiamiDF$EffectiveYearBuilt), mean(MiamiDF$SalePrice), mean(MiamiDF$ActualSqFt),
+                    mean(MiamiDF$LotSize), mean(MiamiDF$Bath), mean(MiamiDF$Stories), mean(MiamiDF$Bed)),
+           Median = c(median(MiamiDF$LivingSqFt), median(MiamiDF$EffectiveYearBuilt), median(MiamiDF$SalePrice), median(MiamiDF$ActualSqFt),
+                                  median(MiamiDF$LotSize), median(MiamiDF$Bath), median(MiamiDF$Stories), median(MiamiDF$Bed)),
+           Max = c(max(MiamiDF$LivingSqFt), max(MiamiDF$EffectiveYearBuilt), max(MiamiDF$SalePrice), max(MiamiDF$ActualSqFt),
+                      max(MiamiDF$LotSize), max(MiamiDF$Bath), max(MiamiDF$Stories), max(MiamiDF$Bed)),
+           Min = c(min(MiamiDF$LivingSqFt), min(MiamiDF$EffectiveYearBuilt), min(MiamiDF$SalePrice), min(MiamiDF$ActualSqFt),
+                      min(MiamiDF$LotSize), min(MiamiDF$Bath), min(MiamiDF$Stories), min(MiamiDF$Bed)),
+           Standard_Deviation = c(sd(MiamiDF$LivingSqFt), sd(MiamiDF$EffectiveYearBuilt), sd(MiamiDF$SalePrice), sd(MiamiDF$ActualSqFt),
+                                 sd(MiamiDF$LotSize), sd(MiamiDF$Bath), sd(MiamiDF$Stories), sd(MiamiDF$Bed)))%>%
+kable() %>%
+kable_styling() %>%
+  footnote(general_title = "Summary Statistics of Internal Characteristics",
+           general = "Table 1.1")
+
+## Amenities/ Public Services
+data.frame(Amenities = c("Dist.Metro", "Dist.Restaurants", "Dist.School", "Dist.Worship", "Dist.Parking","Dist.WorkCenter","Dist.Hospital"), 
+           Description = c("Distance to the closest Metro stop", "Average distance to the 5 closest restaurants", "Distance to the closest school", 
+                           "Distance to the closest place of worship","Average distance to two closest parking spots",
+                           "Average distance to ten work centers","Distance to the closest hospital"),
+           Mean = c(mean(MiamiDF$dist.metro), mean(MiamiDF$bar_nn2), mean(MiamiDF$school_nn1), mean(MiamiDF$worship_nn1),
+                    mean(MiamiDF$parking_nn2), mean(MiamiDF$office_nn3), mean(MiamiDF$hospital_nn1)),
+           Median = c(median(MiamiDF$dist.metro), median(MiamiDF$bar_nn2), median(MiamiDF$school_nn1), median(MiamiDF$worship_nn1),
+                      median(MiamiDF$parking_nn2), median(MiamiDF$office_nn3), median(MiamiDF$hospital_nn1)),
+           Max = c(max(MiamiDF$dist.metro), max(MiamiDF$bar_nn2), max(MiamiDF$school_nn1), max(MiamiDF$worship_nn1),
+                   max(MiamiDF$parking_nn2), max(MiamiDF$office_nn3), max(MiamiDF$hospital_nn1)),
+           Min = c(min(MiamiDF$dist.metro), min(MiamiDF$bar_nn2), min(MiamiDF$school_nn1), min(MiamiDF$worship_nn1),
+                   min(MiamiDF$parking_nn2), min(MiamiDF$office_nn3), min(MiamiDF$hospital_nn1)),
+           Standard_Deviation = c(sd(MiamiDF$dist.metro), sd(MiamiDF$bar_nn2), sd(MiamiDF$school_nn1), sd(MiamiDF$worship_nn1),
+                                  sd(MiamiDF$parking_nn2), sd(MiamiDF$office_nn3), sd(MiamiDF$hospital_nn1)))%>%
+  kable() %>%
+  kable_styling() %>%
+  footnote(general_title = "Summary Statistics of Amenities and public services",
+           general = "Table 1.2")
+
+## Spatial Structures
+data.frame(Amenities = c("Dist.Shore", "Lag_Price", "Median_Rent", "Median_Income", "Pct_white","Pct_Hispanic"), 
+           Description = c("Distance to coast", "Average price of the 5 closest houses", "Median Rent according to the census tract", 
+                           "Median Income according to the census tract","Percentage of White residents",
+                           "Percentage of Hispanic residents"),
+           Mean = c(mean(MiamiDF$logCoastDist), mean(MiamiDF$lagPrice), mean(MiamiDF$MedRent, na.rm = T), mean(MiamiDF$MedHHInc),
+                    mean(MiamiDF$pctWhite), mean(MiamiDF$pctHispanic)),
+           Median = c(median(MiamiDF$logCoastDist), median(MiamiDF$lagPrice), median(MiamiDF$MedRent, na.rm = T), median(MiamiDF$MedHHInc),
+                      median(MiamiDF$pctWhite), median(MiamiDF$pctHispanic)),
+           Max = c(max(MiamiDF$logCoastDist), max(MiamiDF$lagPrice), max(MiamiDF$MedRent, na.rm = T), max(MiamiDF$MedHHInc),
+                   max(MiamiDF$pctWhite), max(MiamiDF$pctHispanic)),
+           Min = c(min(MiamiDF$logCoastDist), min(MiamiDF$lagPrice), min(MiamiDF$MedRent, na.rm = T), min(MiamiDF$MedHHInc),
+                   min(MiamiDF$pctWhite), min(MiamiDF$pctHispanic)),
+           Standard_Deviation = c(sd(MiamiDF$logCoastDist), sd(MiamiDF$lagPrice), sd(MiamiDF$MedRent, na.rm = T), sd(MiamiDF$MedHHInc),
+                                  sd(MiamiDF$pctWhite), sd(MiamiDF$pctHispanic)))%>%
+  kable() %>%
+  kable_styling() %>%
+  footnote(general_title = "Summary Statistics of Spatail Structures",
+           general = "Table 1.3")
+
+## Categorical Factors
+
+count <-group_by(MiamiDF, Docks, LuxuryPool, Whirpool, `XFs_Elevator - Passenger`, Fence, `8ftres3to8ftPool`,`2to4ftPool`,
+                 `3to6ftPool`,`3to8ftPool`) %>%
+  summarize(count = n())
+
+
+data.frame(Amenities = c("Docks", "Luxury Pool", "Whirlpool", "Elevators", "Fences", "Pool Type 1", "Pool Type 2", "Pool Type 3", "Pool Type 4" ), 
+           Description = c("Presence of a dock", "Presence of a luxury pool", "Presence of a whirlpool","Presence of an elevator",
+                           "Presence of fences","Presence of a 8ft pool","Presence of a 2-4ft pool","Presence of a 3-6ft pool","Presence of a 3-8ft pool"),
+           Count = c(count$count[1], count$count[3], count$count[5], count$count[7], 
+                     count$count[9], count$count[11], count$count[13], count$count[15], count$count[17]))%>%
+  kable() %>%
+  kable_styling() %>%
+  footnote(general_title = "Count of Categorical Features",
+           general = "Table 1.4")
+
+## Correlation matrix
+
+numericVars1 <- 
+  select_if(st_drop_geometry(MiamiDF), is.numeric) %>% na.omit() %>%
+  select(LivingSqFt,EffectiveYearBuilt,SalePrice,ActualSqFt,LotSize,Bath,Stories,Bed)
+
+ggcorrplot(
+  round(cor(numericVars1), 1), 
+  p.mat = cor_pmat(numericVars1),
+  colors = c("#25CB10", "white", "#FA7800"),
+  type="lower",
+  insig = "blank") +  
+  labs(title = "Correlation across Internal Characteristics", caption="Figure 1.1") 
+
+numericVars2 <- 
+  select_if(st_drop_geometry(MiamiDF), is.numeric) %>% na.omit() %>%
+  select(dist.metro,bar_nn2,school_nn1,worship_nn1,parking_nn2,office_nn3,hospital_nn1, SalePrice)
+
+ggcorrplot(
+  round(cor(numericVars2), 1), 
+  p.mat = cor_pmat(numericVars2),
+  colors = c("#25CB10", "white", "#FA7800"),
+  type="lower",
+  insig = "blank") +  
+  labs(title = "Correlation across Amenities and public services", caption="Figure 1.2") 
+
+numericVars3 <- 
+  select_if(st_drop_geometry(MiamiDF), is.numeric) %>% na.omit() %>%
+  select(logCoastDist,lagPrice,MedRent,MedHHInc,pctWhite,pctHispanic, SalePrice)
+
+ggcorrplot(
+  round(cor(numericVars3), 1), 
+  p.mat = cor_pmat(numericVars3),
+  colors = c("#25CB10", "white", "#FA7800"),
+  type="lower",
+  insig = "blank") +  
+  labs(title = "Correlation across Spatial Structures", caption="Figure 1.3") 
+
+numericVars4 <- 
+  select_if(st_drop_geometry(MiamiDF), is.numeric) %>% na.omit() %>%
+  select(Docks, LuxuryPool, Whirpool, `XFs_Elevator - Passenger`, Fence, `8ftres3to8ftPool`,`2to4ftPool`,
+         `3to6ftPool`,`3to8ftPool`, SalePrice)
+
+ggcorrplot(
+  round(cor(numericVars4), 1), 
+  p.mat = cor_pmat(numericVars4),
+  colors = c("#25CB10", "white", "#FA7800"),
+  type="lower",
+  insig = "blank") +  
+  labs(title = "Correlation across Categorical Features", caption="Figure 1.4") 
+
