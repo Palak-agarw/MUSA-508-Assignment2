@@ -10,13 +10,19 @@ output:
   toc_depth: 3
 ---
 
-## Introduction 
+# Introduction 
 
-For this assignment we were asked to build a better predictive model of home prices for **Miami-Dade County, Florida** using internal characteristics, amenities/public services or spatial structures.
+Zillow publishes "Zestimate" valuations for homes across the U.S. using an algorithm that draws on data from county and tax assessor records, multiple listing services, brokerages, and homeowner submissions. This project sought to improve Zillow's housing market predictions for Miami and Miami Beach.
 
-```{r setup, message = FALSE, warning=FALSE}
+This endeavor was challenging for several reasons. First, we relied exlusively on ordinary least squares linear modeling. A more sophisted algorithm, such as random forest, may produce a better model. Second, the project used only open source data. This restriction was particularly challenging given the lack of open source data available for Miami Beach as compared to Miami.
+
+We conceptualized our model using the hedonic model, which predicts home prices by summing the value of its constituent parts. Our model includes three types of variables: internal characteristics of houses, amenities/public services, and spatial structures. 
+
+Despite our hardwork and dedication to the project, we failed to create a successful model. With a mean absolute error of over $350,000 in our model, we do not anticipate securing a contract with Zillow anytime soon. 
+
+### Set Up
+```{r setup, message = FALSE, warning=FALSE,results=FALSE}
 #importing the library
-
 library(rjson)
 library(tidycensus)
 library(tidyverse)
@@ -41,15 +47,10 @@ library(viridis)
 library(stargazer)
 options(scipen=999)
 options(tigris_class = "sf")
-
 ```
 
-### Load Themes
-
-Create our mapping and plotting themes, color palettes and quantile break.
-
+### Themes, Palettes, and Quantile Break Functions
 ```{r load_themes, message = FALSE}
-
 # Themes and Functions
 mapTheme <- function(base_size = 12) {
   theme(
@@ -66,7 +67,6 @@ mapTheme <- function(base_size = 12) {
     panel.border = element_rect(colour = "black", fill=NA, size=2)
   )
 }
-
 plotTheme <- function(base_size = 12) {
   theme(
     text = element_text( color = "black"),
@@ -89,9 +89,7 @@ plotTheme <- function(base_size = 12) {
     strip.text.x = element_text(size = 14)
   )
 }
-
 palette5 <- c("#25CB10", "#5AB60C", "#8FA108",   "#C48C04", "#FA7800")
-
 qBr <- function(df, variable, rnd) {
   if (missing(rnd)) {
     as.character(quantile(round(df[[variable]],0),
@@ -101,18 +99,16 @@ qBr <- function(df, variable, rnd) {
                  c(.01,.2,.4,.6,.8), na.rm=T)
   }
 }
-
 q5 <- function(variable) {as.factor(ntile(variable, 5))}
-
 ```
 
-### Load Functions
+### Additional Functions
 
-For this project, we used two main functions : **Nearest neighbor** and **Multiple ring buffer.** The nearest neighbor function found the average distance from the measuring feature to the measured feature. The function requires 3 input variables - the dependent feature to measure from, the features to measure to and the number of features. The multiple ring buffer creates concentric rings around the point feature and finds the features that fall in buffer. 
+Many of the features in this model were engineered using two functions: **Nearest neighbor** and **Multiple ring buffer.** The nearest neighbor function finds the average distance from the measuring feature to the measured feature. The function requires 3 input variables - the dependent feature to measure from, the features to measure to, and the number of features. For example, a nearest neighbor feature could measure the average distance from each house to its three closest public parks. 
+
+The multiple ring buffer creates concentric rings around point features. This can be used, for example, to determine how many houses are within a .5 mile radius of a metro stop.
 ```{r functions, message = FALSE}
-
 # Functions
-
 nn_function <- function(measureFrom,measureTo,k) {
   measureFrom_Matrix <- as.matrix(measureFrom)
   measureTo_Matrix <- as.matrix(measureTo)
@@ -131,7 +127,6 @@ nn_function <- function(measureFrom,measureTo,k) {
   
   return(output)  
 }
-
 #Function MultipleRingBuffer
 multipleRingBuffer <- function(inputPolygon, maxDistance, interval) 
 {
@@ -216,14 +211,10 @@ multipleRingBuffer <- function(inputPolygon, maxDistance, interval)
 }
 ```
 
-## Wrangling with the Miami Data
-
-```{r load_data, message = FALSE, warning=FALSE, results=FALSE}
-
+### Data Wrangling
+```{r load_data, message = FALSE, warning=FALSE, results=FALSE, echo = FALSE}
 MiamiDF <- st_read("studentsData.geojson")
-
 MiamiDF <- st_transform(MiamiDF,'ESRI:102658')
-
 MiamiDF <- dplyr::select(MiamiDF,-saleQual,-WVDB,-HEX,-GPAR,-County.2nd.HEX, 
                          -County.Senior,-County.LongTermSenior,-County.Other.Exempt,
                          -City.2nd.HEX,-City.Senior,-City.LongTermSenior,
@@ -231,20 +222,19 @@ MiamiDF <- dplyr::select(MiamiDF,-saleQual,-WVDB,-HEX,-GPAR,-County.2nd.HEX,
                          -Owner1,-Owner2,-Mailing.Address,-Mailing.City,
                          -Mailing.State,-Mailing.Zip,-Mailing.Country,
                          -Year,-Land,-Bldg,-Total,-Assessed,-County.Taxable,
-                         -City.Taxable,-Legal1,-Legal2,-Legal3,-Legal4,-Legal5,-Legal6,-Units)
+                    -City.Taxable,-Legal1,-Legal2,-Legal3,-Legal4,-Legal5,
+                    -Legal6,-Units)
 ```
 
-### Internal Characteristics 
+# Data
+## Internal Characteristics 
 
-First lets start with internal characteristics of the house. For this we looked at the various extra factors of the houses, number of beds, baths, living sq ft, actual sq ft, lot size, year built and stories. Some characteristics like number of beds and year built have been converted to categorical feature as that makes more sense cause of the number of combinations possible and the actual value does not matter as much.
+First we looked at the internal characteristics of the houses. We considered features associated with the number of bedrooms, number of bathrooms, living square feet, actual square feet, year built, effective year built, stories, pools, jacuzzis, fences, patios, docks, and elevators. For number of bedrooms and year built, we tested both discrete and categorical variables in our model.
 
-
-```{r XF_column, message=FALSE}
-
+```{r XF_column, message=FALSE, echo = FALSE, warning=FALSE, results=FALSE}
 # Create Categorical Variables
 MiamiDF$YearCat <- cut(MiamiDF$YearBuilt, c(1900,1909,1919,1929,1939,1949,
-                                            1959,1969,1979,1989,1999,2009,2019))
-
+                                          1959,1969,1979,1989,1999,2009,2019))
 MiamiDF$BedCat <- cut(MiamiDF$Bed,breaks=c(0:8,Inf), right=FALSE, labels=c(0:7,"8+"))
 
 # Wrangle XF Columns
@@ -270,7 +260,6 @@ MiamiDF <- dplyr::select(MiamiDF,-"XFs_Pool 6' res BETTER 3-8' dpth",
                   -"XFs_large",-"XFs_elec",-"XFs_plumb",-"XFs_Tiki Hut - Standard Thatch roof w/poles",
                   -"XFs_Tiki Hut - Good Thatch roof w/poles & electric",-"XFs_Tiki Hut - Better Thatch roof",
                   -"XFs_Bomb Shelter - Concrete Block",-"XFs_Tennis Court - Asphalt or Clay" ) 
-
 
 # Wrangle Fence Columns
 MiamiDF$Fence <- ifelse(MiamiDF$`XFs_Aluminum Modular Fence`==1| MiamiDF$`XFs_Wood Fence`==1|MiamiDF$`XFs_Chain-link Fence 4-5 ft high`==1|
@@ -302,88 +291,35 @@ MiamiDF$Docks <- ifelse(MiamiDF$`XFs_Dock - Wood on Light Posts`==1|MiamiDF$`XFs
 
 ## Wrangle Elevator and Jacuzzi Columns
 MiamiDF$Elevator <- ifelse(MiamiDF$`XFs_Elevator - Passenger`==1,1,0)
+
 MiamiDF$Jacuzzi <- ifelse(MiamiDF$`XFs_Jacuzzi`==1,1,0)
 
-## Creating column for ZIP codes
-x <- vector(mode='list', length = 3503)
-spli <- strsplit(MiamiDF$Property.Zip, "-")
-for (val in spli){
-  x <- append(x, val[1])
-}
-MiamiDF <- 
-  MiamiDF %>%
-  mutate(Zip = as.numeric(x[3504:7006]))
-
-```
-### Converting it into spatial feature and adding neighborhoods
-
-```{r Spatial, message=FALSE, warning=FALSE}
-
-## Converting into spatial object
 MiamiDF <- st_as_sf(MiamiDF)
 
 MiamiDF <-   st_centroid(MiamiDF)
 
-Neighborhoods <- st_read("https://opendata.arcgis.com/datasets/2f54a0cbd67046f2bd100fb735176e6c_0.geojson")
-
-Neighborhoods <- st_transform(Neighborhoods,'ESRI:102658')
-
-Municipality <- st_read('https://opendata.arcgis.com/datasets/bd523e71861749959a7f12c9d0388d1c_0.geojson')
-
-Municipality <- st_transform(Municipality,'ESRI:102658')
-
-Municipality <- filter(Municipality, NAME == "MIAMI BEACH")
-
-Neighborhoods <- Neighborhoods %>%
-  rename( Neighbourhood_name = LABEL)
-
-Neighborhoods <- Neighborhoods %>% dplyr::select(-FID,-Shape_STAr,-Shape_STLe,-Shape__Area,-Shape__Length)
-
-Municipality <- Municipality %>%
-  rename( Neighbourhood_name = NAME) 
-  
-Municipality <- Municipality %>% dplyr::select(-FID,-MUNICUID,-MUNICUID,-FIPSCODE,-CREATEDBY, -CREATEDDATE, -MODIFIEDBY, 
-                                        -MODIFIEDDATE, -SHAPE_Area, -SHAPE_Length, -MUNICID)
-
-
-Municipality$Neighbourhood_name <- make.names(Municipality$Neighbourhood_name, unique=TRUE)
-
-Neighborhoods_combine <- rbind(Neighborhoods, Municipality)
-
-MiamiDF <- st_join(MiamiDF, Neighborhoods_combine, join = st_intersects) 
-
-MiamiDF$Neighbourhood_name <- ifelse(is.na(MiamiDF$Neighbourhood_name), "Haynesworth", MiamiDF$Neighbourhood_name) 
-
 ```
-### Amenities/Public services 
 
-While one is looking for houses, proximity to public services and amenities is one major factor for selection. Many factors can be considered, below are some of the amenities we looked in  :     
-* **Transit Data** : Miami does not have an extensive metro rail system and hence our assumption is that it would be more sought after.         
-* **Restaurants, cafes and bars**     
-* **School Attendance Areas **  
-* **Parks** 
-* **Places of worship**
-* **Parking**
-* **Work Centers**     
-* **Hospitals**    
+## Amenities/Public services 
 
-```{r Public_services, message=FALSE,warning=FALSE}
+Proximity to public services and amenities can add value to houses. To get this data we made use of Open Street map as well as other open data portals. We considered the following public services and amenities when building our model:            
+* **Transit Stops**                
+* **Restaurants, cafes and bars**             
+* **Schools**             
+* **School Attendance Areas **: This information was not available for Miami Beach           
+* **Parks**          
+* **Places of worship**            
+* **Car Parks**           
+* **Work Centers**                  
+* **Hospitals**                 
 
-#Transit Data 
-
+```{r Public_services, message=FALSE,warning=FALSE, echo=FALSE, results=FALSE}
+# Transit Data 
 metroStops <- st_read("https://opendata.arcgis.com/datasets/ee3e2c45427e4c85b751d8ad57dd7b16_0.geojson") 
+
 metroStops <- metroStops %>% st_transform('ESRI:102658')
 
-# Plot of the metro stops
-ggplot() +
-  geom_sf(data=Neighborhoods_combine)+
-  geom_sf(data=metroStops, 
-          aes(colour = 'red' ),
-          show.legend = "point", size= 1.2)
-
-
 ## Buffer method - not preferred
-
 if(FALSE){
   metroBuffers <- 
   rbind(
@@ -393,9 +329,10 @@ if(FALSE){
     st_union(st_buffer(metroStops, 2640)) %>%
       st_sf() %>%
       mutate(Legend = "Unioned Buffer"))
-
+  
 # Create an sf object with ONLY the unioned buffer
 buffer <- filter(metroBuffers, Legend=="Unioned Buffer")
+
 buffer <- buffer %>% st_transform('ESRI:102658')
 
 # Clip the Miami training DF ... by seeing which tracts intersect (st_intersection)
@@ -405,20 +342,11 @@ clip <-
   dplyr::select(Folio) %>%
   mutate(Selection_Type = "Clip")
 
-ggplot() +
-  geom_sf(data=Neighborhoods)+
-  geom_sf(data = clip) 
-
 # Do a spatial selection to see which tracts touch the buffer
 selection <- 
   MiamiDF[buffer,] %>%
   dplyr::select(Folio) %>%
   mutate(Selection_Type = "Spatial Selection")
-
-ggplot() +
-  geom_sf(data=Neighborhoods)+
-  geom_sf(data = selection) +
-  geom_sf(data = buffer, fill = "transparent", color = "red")
 
 selectCentroids <-
   st_centroid(MiamiDF)[buffer,] %>%
@@ -426,31 +354,13 @@ selectCentroids <-
   left_join(dplyr::select(MiamiDF, Folio)) %>%
   st_sf() %>%
   dplyr::select(Folio) %>%
-  mutate(Selection_Type = "Select by Centroids")
-
-ggplot() +
-  geom_sf(data = selectCentroids) +
-  geom_sf(data = buffer, fill = "transparent", color = "red")+
-  theme(plot.title = element_text(size=22))
-
-MiamiDF <- 
-  rbind(
-    st_centroid(MiamiDF)[buffer,] %>%
-      st_drop_geometry() %>%
-      left_join(MiamiDF) %>%
-      st_sf() %>%
-      mutate(TOD = 1),
-    st_centroid(MiamiDF)[buffer, op = st_disjoint] %>%
-      st_drop_geometry() %>%
-      left_join(MiamiDF) %>%
-      st_sf() %>%
-      mutate(TOD = 0))}
+  mutate(Selection_Type = "Select by Centroids")}
 
 # Multiple Ring method
-
 #Creating the buffer around the transit stops
-MiamiDF <-
-  st_join(st_centroid(MiamiDF), 
+
+if(FALSE){MiamiDF <-
+  st_join(MiamiDF, 
           multipleRingBuffer(st_union(metroStops), 47520, 1320)) %>%
   st_drop_geometry() %>%
   left_join(MiamiDF) %>%
@@ -465,13 +375,12 @@ MiamiDF <-
     Distance >= 0.5 & Distance <= 0.75  ~ "Three Quater Mile",
     Distance >= 1 & Distance < 2   ~ "More than one Mile",
     Distance >= 2 & Distance < 3   ~ "More than two Mile",
-    Distance >= 3    ~ "More than three Mile"))
+    Distance >= 3    ~ "More than three Mile"))}
 
 MiamiDF <- 
   MiamiDF %>%
   mutate(dist.metro = nn_function(st_coordinates(MiamiDF), 
                                   st_coordinates(metroStops), 1)/5280)
-
 MiamiDF <- 
   MiamiDF %>%
   mutate(dist.metro.cat = case_when(
@@ -483,9 +392,7 @@ MiamiDF <-
     dist.metro >= 2 & dist.metro < 3   ~ "More than two Mile",
     dist.metro >= 3    ~ "More than three Mile"))
 
-
 ## Bar/ restaurant data
-
 miami.base <- 
   st_read("https://opendata.arcgis.com/datasets/5ece0745e24b4617a49f2e098df8117f_0.geojson") %>%
   filter(NAME == "MIAMI BEACH" | NAME == "MIAMI") %>%
@@ -495,10 +402,6 @@ xmin = st_bbox(miami.base)[[1]]
 ymin = st_bbox(miami.base)[[2]]
 xmax = st_bbox(miami.base)[[3]]  
 ymax = st_bbox(miami.base)[[4]]
-
-ggplot() +
-  geom_sf(data=miami.base, fill="black") +
-  geom_sf(data=st_as_sfc(st_bbox(miami.base)), colour="red", fill=NA) 
 
 bars <- opq(bbox = c(xmin, ymin, xmax, ymax)) %>% 
   add_osm_feature(key = 'amenity', value = c("bar", "pub", "restaurant")) %>%
@@ -510,11 +413,6 @@ bars <-
 
 bars <- bars %>% st_transform('ESRI:102658')
 
-ggplot() +
-  geom_sf(data=miami.base, fill="black") +
-  geom_sf(data=bars, colour="red", size=.75)
-
-
 ## Nearest Neighbor Feature
 st_c <- st_coordinates
 
@@ -525,8 +423,7 @@ MiamiDF <-
     bar_nn2 = nn_function(st_c(MiamiDF), st_c(bars), 5)/5280, 
     bar_nn3 = nn_function(st_c(MiamiDF), st_c(bars), 10)/5280, 
     bar_nn4 = nn_function(st_c(MiamiDF), st_c(bars), 15)/5280, 
-    bar_nn5 = nn_function(st_c(MiamiDF), st_c(bars), 20)/5280) 
-
+    bar_nn5 = nn_function(st_c(MiamiDF), st_c(bars), 20)/5280)
 
 # School Attendance Areas
 ## Elementary Schools
@@ -538,11 +435,6 @@ ElementarySchool<- st_transform(ElementarySchool,'ESRI:102658') %>%
 
 ElementarySchool<-filter(ElementarySchool, CITY == "Miami"| CITY == "MiamiBeach")
 
-ggplot() +
-  geom_sf(data = ElementarySchool, fill = "grey40") +
-  geom_sf(data = MiamiDF)+
-  geom_sf(data = Neighborhoods)
-
 ## Middle Schools
 MiddleSchool <- st_read("https://opendata.arcgis.com/datasets/dd2719ff6105463187197165a9c8dd5c_0.geojson")
 
@@ -551,11 +443,6 @@ MiddleSchool<- st_transform(MiddleSchool,'ESRI:102658') %>%
 
 MiddleSchool<-filter(MiddleSchool, CITY == "Miami"| CITY == "MiamiBeach")
 
-ggplot() +
-  geom_sf(data = MiddleSchool, fill = "grey40") +
-  geom_sf(data = MiamiDF)
-
-
 ## High Schools
 HighSchool <- st_read("https://opendata.arcgis.com/datasets/9004dbf5f7f645d493bfb6b875a43dc1_0.geojson")
 
@@ -563,11 +450,6 @@ HighSchool<- st_transform(HighSchool,'ESRI:102658') %>%
   dplyr::select(-FID,-ID,-ZIPCODE,-PHONE,-REGION,-ID2,-CREATEDBY,-CREATEDDATE,-MODIFIEDBY,-MODIFIEDDATE)
 
 HighSchool<-filter(HighSchool, CITY == "Miami"| CITY == "MiamiBeach")
-
-ggplot() +
-  geom_sf(data = HighSchool, fill = "grey40") +
-  geom_sf(data = MiamiDF) +
-  geom_sf(data = Neighborhoods)
 
 ElementarySchool['Elementary'] <- "Elementary"
 MiddleSchool['Middle'] <- "Middle"
@@ -583,21 +465,23 @@ HighSchool <- HighSchool %>%
   dplyr::select(-ADDRESS,-CITY,-GRADES,-DISPLAYNAME,-SHAPE_Length,-SHAPE_Area)
 
 MiamiDF <- st_join(MiamiDF, ElementarySchool, join = st_intersects) 
+
 MiamiDF <- st_join(MiamiDF, MiddleSchool, join = st_intersects) 
+
 MiamiDF <- st_join(MiamiDF, HighSchool, join = st_intersects) 
 
 MiamiDF$NAME <- ifelse(is.na(MiamiDF$NAME), "OtherHS", MiamiDF$NAME) 
+
 MiamiDF$NAME.x <- ifelse(is.na(MiamiDF$NAME.x), "OtherES", MiamiDF$NAME.x)
+
 MiamiDF$NAME.y <- ifelse(is.na(MiamiDF$NAME.y), "OtherMS", MiamiDF$NAME.y)
 
 MiamiDF <- rename(MiamiDF,"HighSchool"="NAME","ElementarySchool"="NAME.x","MiddleSchool"="NAME.y")
 
 ## Using nearest neighbor for schools
-
 school <- opq(bbox = c(xmin, ymin, xmax, ymax)) %>% 
   add_osm_feature(key = 'amenity', value = c("school", "kindergarten")) %>%
   osmdata_sf()
-
 
 school <- 
   school$osm_points %>%
@@ -610,9 +494,7 @@ MiamiDF <-
   mutate(
     school_nn1 = nn_function(st_c(MiamiDF), st_c(school), 1)) 
 
-
 ### Parks
-
 Parks <- st_read("https://opendata.arcgis.com/datasets/8c9528d3e1824db3b14ed53188a46291_0.geojson")
 
 Parks <- st_transform(Parks,'ESRI:102658')
@@ -626,9 +508,7 @@ MiamiDF <-
     park_nn4 = nn_function(st_c(MiamiDF), st_c(Parks), 5), 
     park_nn5 = nn_function(st_c(MiamiDF), st_c(Parks), 10))
 
-
 ## Place of worship
-
 worship <- opq(bbox = c(xmin, ymin, xmax, ymax)) %>% 
   add_osm_feature(key = 'amenity', value = c("place_of_worship")) %>%
   osmdata_sf()
@@ -637,11 +517,8 @@ worship <-
   worship$osm_points %>%
   .[miami.base,]
 
-worship <- worship %>% st_transform('ESRI:102658')
 
-ggplot() +
-  geom_sf(data=miami.base, fill="black") +
-  geom_sf(data=worship, colour="red", size=.75)
+worship <- worship %>% st_transform('ESRI:102658')
 
 MiamiDF <-
   MiamiDF %>% 
@@ -650,22 +527,15 @@ MiamiDF <-
     worship_nn2 = nn_function(st_c(MiamiDF), st_c(worship), 2), 
     worship_nn3 = nn_function(st_c(MiamiDF), st_c(worship), 10)) 
 
-
 ## Parking
-
 parking <- opq(bbox = c(xmin, ymin, xmax, ymax)) %>% 
   add_osm_feature(key = 'amenity', value = c("parking", "parking_space", "parking_entrance")) %>%
   osmdata_sf()
-
 parking <- 
   parking$osm_points %>%
   .[miami.base,]
 
 parking <- parking %>% st_transform('ESRI:102658')
-
-ggplot() +
-  geom_sf(data=miami.base, fill="black") +
-  geom_sf(data=parking, colour="red", size=.75)
 
 MiamiDF <-
   MiamiDF %>% 
@@ -674,10 +544,9 @@ MiamiDF <-
     parking_nn2 = nn_function(st_c(MiamiDF), st_c(parking), 2), 
     parking_nn3 = nn_function(st_c(MiamiDF), st_c(parking), 5)) 
 
-
 ## Work centers
-                  
 landuse <- st_read("https://opendata.arcgis.com/datasets/244e956692d442c3beaa8a89259e3bd9_0.geojson")
+
 landuse <- st_transform(landuse,'ESRI:102658')
 
 office <- filter(landuse, DESCR == "Office Building.")
@@ -689,9 +558,7 @@ MiamiDF <-
     office_nn2 = nn_function(st_c(MiamiDF), st_c(st_centroid(office)), 5), 
     office_nn3 = nn_function(st_c(MiamiDF), st_c(st_centroid(office)), 10)) 
 
-
-## hospital 
-
+## Hospitals 
 hospital <- opq(bbox = c(xmin, ymin, xmax, ymax)) %>% 
   add_osm_feature(key = 'amenity', value = c("hospital")) %>%
   osmdata_sf()
@@ -702,31 +569,66 @@ hospital <-
 
 hospital <- hospital %>% st_transform('ESRI:102658')
 
-ggplot() +
-  geom_sf(data=miami.base, fill="black") +
-  geom_sf(data=parking, colour="red", size=.75)
-
 MiamiDF <-
   MiamiDF %>% 
   mutate(
     hospital_nn1 = nn_function(st_c(MiamiDF), st_c(hospital), 1))
-
 ```
 
 ### Spatial Structures
+In creating our model, we experimented with spatial features at various scales:       
+* **Neighborhood**: We were not able to find a neighborhood shapefile for Miami Beach, so we use Miami Beach's municipality borders as a proxy. One house was initially not assigned a neighborhood, so we imputed the value "Haynesworth" based on the house's location on the map.     
+* **Zip Code**     
+* **City**           
+* **Shoreline**              
+* **Sale Price of nearest 5 houses**         
+* **Median Rent within Census Tract**        
+* **Median Income within Census Tract**: The mean median income was used for missing values       
+* **Racial Composition within Census Tract**: Like many cities within the U.S., Miami is highly segregated.        
 
-House sales are affected by spatial features ......    
-* **Neighborhood**      
-* **Shoreline**     
-* **Sale Price around**  
-* **Median Rent** 
-* **Median Income**
-* **Racial Composition**
+```{r Spatial_Structure, message=FALSE, warning=FALSE, echo=FALSE, results=FALSE}
 
-```{r Spatial_Structure, message=FALSE, warning=FALSE}
+## Converting into spatial object
+MiamiDF <- st_as_sf(MiamiDF)
+MiamiDF <-   st_centroid(MiamiDF)
+
+Neighborhoods <- st_read("https://opendata.arcgis.com/datasets/2f54a0cbd67046f2bd100fb735176e6c_0.geojson")
+
+Neighborhoods <- st_transform(Neighborhoods,'ESRI:102658')
+
+Municipality <- st_read('https://opendata.arcgis.com/datasets/bd523e71861749959a7f12c9d0388d1c_0.geojson')
+
+Municipality <- st_transform(Municipality,'ESRI:102658')
+
+Municipality <- filter(Municipality, NAME == "MIAMI BEACH")
+
+Neighborhoods <- Neighborhoods %>%
+  rename( Neighbourhood_name = LABEL)
+Neighborhoods <- Neighborhoods %>% dplyr::select(-FID,-Shape_STAr,-Shape_STLe,-Shape__Area,-Shape__Length)
+Municipality <- Municipality %>%
+  rename( Neighbourhood_name = NAME) 
+  
+Municipality <- Municipality %>% dplyr::select(-FID,-MUNICUID,-MUNICUID,-FIPSCODE,-CREATEDBY, -CREATEDDATE, -MODIFIEDBY, 
+                                        -MODIFIEDDATE, -SHAPE_Area, -SHAPE_Length, -MUNICID)
+Municipality$Neighbourhood_name <- make.names(Municipality$Neighbourhood_name, unique=TRUE)
+
+Neighborhoods_combine <- rbind(Neighborhoods, Municipality)
+
+MiamiDF <- st_join(MiamiDF, Neighborhoods_combine, join = st_intersects) 
+
+MiamiDF$Neighbourhood_name <- ifelse(is.na(MiamiDF$Neighbourhood_name), "Haynesworth", MiamiDF$Neighbourhood_name) 
+
+## Creating column for ZIP codes
+x <- vector(mode='list', length = 3503)
+spli <- strsplit(MiamiDF$Property.Zip, "-")
+for (val in spli){
+  x <- append(x, val[1])
+}
+MiamiDF <- 
+  MiamiDF %>%
+  mutate(Zip = as.numeric(x[3504:7006]))
 
 ## Shoreline
-
 #Coastline Data
 Coastline<-opq(bbox = c(xmin, ymin, xmax, ymax)) %>% 
   add_osm_feature("natural", "coastline") %>%
@@ -734,11 +636,10 @@ Coastline<-opq(bbox = c(xmin, ymin, xmax, ymax)) %>%
 
 MiamiDF <- st_transform(MiamiDF,'ESRI:37001' )
 
-#add to MiamiDF and convert to miles
+#add to MiamiDFKnown and convert to miles
 MiamiDF <-
   MiamiDF %>%  
-  mutate(CoastDist=(geosphere::dist2Line(p=st_coordinates(MiamiDF),
-                                         line=st_coordinates(Coastline$osm_lines)[,1:2])*0.00062137)[,1])
+  mutate(CoastDist=(geosphere::dist2Line(p=st_coordinates(MiamiDF),                                  line=st_coordinates(Coastline$osm_lines)[,1:2])*0.00062137)[,1])
 
 MiamiDF <- st_transform(MiamiDF,'ESRI:102658' )
 
@@ -751,7 +652,6 @@ miami.base <-
   st_transform('ESRI:102658') %>%
   filter(NAME == "MIAMI BEACH" | NAME == "MIAMI") %>%
   st_union()
-
 shoreline <-   st_read('https://opendata.arcgis.com/datasets/58386199cc234518822e5f34f65eb713_0.geojson') %>% 
   st_transform('ESRI:102658')
 
@@ -759,7 +659,7 @@ shoreline <-   st_read('https://opendata.arcgis.com/datasets/58386199cc234518822
 shoreline <- st_intersection(shoreline, miami.base)
 
 #transform shoreline to points
-shoreline.point <- st_cast(shoreline,"POINT") 
+shoreline.point <- st_cast(shoreline,"POINT")
 
 #use nn_function for distance
 MiamiDF <- 
@@ -767,26 +667,15 @@ MiamiDF <-
   mutate(dist.shore = nn_function(st_coordinates(MiamiDF), 
                                   st_coordinates(shoreline.point), 1)/5280)
 
-ggplot() + geom_sf(data=MiamiDF, aes(colour=dist.shore)) + 
-  geom_sf(data=shoreline) +
-  scale_colour_viridis()
-
-
-
 ## Lag price
-
 k_nearest_neighbors = 5
 coords <- st_coordinates(MiamiDF)
 neighborList <- knn2nb(knearneigh(coords, k_nearest_neighbors))
 spatialWeights <- nb2listw(neighborList, style="W")
 MiamiDF$lagPrice <- lag.listw(spatialWeights, MiamiDF$SalePrice)
 
-
-
 ## Census data
-
 census_api_key("aea3dee2d96acb5101e94f3dcfa1b575f73d093a", overwrite = TRUE)
-
 Miamitracts <-  
   get_acs(geography = "tract", variables = c("B25026_001E","B02001_002E","B19013_001E",
                                              "B25058_001E","B02001_003E","B02001_004E",
@@ -815,24 +704,295 @@ Miamitracts <-
   mutate(pctWhite = ifelse(TotalPop > 0, Whites / TotalPop * 100, 0),
          pctHispanic = ifelse(TotalPop > 0, Hispanic / TotalPop * 100,0))
 
-
-ggplot() + 
-  geom_sf(data=Miamitracts)
-
 MiamiDF <- st_join(MiamiDF, Miamitracts, join = st_intersects) 
 
 MiamiDF$MedHHInc <- ifelse(is.na(MiamiDF$MedHHInc), 59223.68, MiamiDF$MedHHInc)
-MiamiDF$pctWhite <- ifelse(is.na(MiamiDF$pctWhite), 90, MiamiDF$pctWhite) 
-MiamiDF$pctHispanic <- ifelse(is.na(MiamiDF$pctHispanic), 90, MiamiDF$pctHispanic) 
+
+MiamiDF$pctWhite <- ifelse(is.na(MiamiDF$pctWhite), 73.9, MiamiDF$pctWhite) 
+
+MiamiDF$pctHispanic <- ifelse(is.na(MiamiDF$pctHispanic), 57.6, MiamiDF$pctHispanic) 
+```
+
+## Variable Descriptions
+
+The following variables were ultimately included in our model.
+
+### Numeric Internal Features
+
+```{r num_internal, message=FALSE, warning=FALSE, echo=FALSE}
+
+### Internal Characteristics
+data.frame(Internal_Characteristics = c("LivingSqFt", "EffectiveYearBuilt", "SalePrice", "ActualSqFt", "LotSize","Bath","Stories", "Bed"),
+           Description = c("Living Sq Ft", "Age adjusted for Renovation or neglect", "Last sale price", "Updated Living SqFt",
+                           "Size of the Lot", "Number of Bathrooms", "Number of Stories", "Number of Bedrooms"),
+           Mean = c(mean(MiamiDF$LivingSqFt), mean(MiamiDF$EffectiveYearBuilt), mean(MiamiDF$SalePrice), mean(MiamiDF$ActualSqFt),
+                    mean(MiamiDF$LotSize), mean(MiamiDF$Bath), mean(MiamiDF$Stories), mean(MiamiDF$Bed)),
+           Median = c(median(MiamiDF$LivingSqFt), median(MiamiDF$EffectiveYearBuilt), median(MiamiDF$SalePrice), median(MiamiDF$ActualSqFt),
+                                  median(MiamiDF$LotSize), median(MiamiDF$Bath), median(MiamiDF$Stories), median(MiamiDF$Bed)),
+           Max = c(max(MiamiDF$LivingSqFt), max(MiamiDF$EffectiveYearBuilt), max(MiamiDF$SalePrice), max(MiamiDF$ActualSqFt),
+                      max(MiamiDF$LotSize), max(MiamiDF$Bath), max(MiamiDF$Stories), max(MiamiDF$Bed)),
+           Min = c(min(MiamiDF$LivingSqFt), min(MiamiDF$EffectiveYearBuilt), min(MiamiDF$SalePrice), min(MiamiDF$ActualSqFt),
+                      min(MiamiDF$LotSize), min(MiamiDF$Bath), min(MiamiDF$Stories), min(MiamiDF$Bed)),
+           Standard_Deviation = c(sd(MiamiDF$LivingSqFt), sd(MiamiDF$EffectiveYearBuilt), sd(MiamiDF$SalePrice), sd(MiamiDF$ActualSqFt),
+                                 sd(MiamiDF$LotSize), sd(MiamiDF$Bath), sd(MiamiDF$Stories), sd(MiamiDF$Bed)))%>%
+kable() %>%
+kable_styling() %>%
+  footnote(general_title = "Summary Statistics of Internal Characteristics",
+           general = "Table 1.1")
+```
+
+### Categorical Internal Features
+```{r cat_internal, message=FALSE, warning=FALSE, echo=FALSE}
+count <-group_by(MiamiDF, Docks, LuxuryPool, Whirpool, `XFs_Elevator - Passenger`, Fence, `8ftres3to8ftPool`,`2to4ftPool`,
+                 `3to6ftPool`,`3to8ftPool`) %>%
+  summarize(count = n())
+
+
+data.frame(Amenities = c("Docks", "Luxury Pool", "Whirlpool", "Elevators", "Fences", "Pool Type 1", "Pool Type 2", "Pool Type 3", "Pool Type 4" ), 
+           Description = c("Presence of a dock", "Presence of a luxury pool", "Presence of a whirlpool","Presence of an elevator",
+                           "Presence of fences","Presence of a 8ft pool","Presence of a 2-4ft pool","Presence of a 3-6ft pool","Presence of a 3-8ft pool"),
+           Count = c(count$count[1], count$count[3], count$count[5], count$count[7], 
+                     count$count[9], count$count[11], count$count[13], count$count[15], count$count[17]))%>%
+  kable() %>%
+  kable_styling() %>%
+  footnote(general_title = "Count of Categorical Internal Features",
+           general = "Table 1.2")
+ 
+```
+
+### Ammenities/Public Services
+```{r ammenities, message=FALSE, warning=FALSE, echo=FALSE}
+data.frame(Amenities = c("Dist.Metro", "Dist.Restaurants", "Dist.School", "Dist.Worship", "Dist.Parking","Dist.WorkCenter","Dist.Hospital"), 
+           Description = c("Distance to the closest Metro stop", "Average distance to the 5 closest restaurants", "Distance to the closest school", 
+                           "Distance to the closest place of worship","Average distance to two closest parking spots",
+                           "Average distance to ten work centers","Distance to the closest hospital"),
+           Mean = c(mean(MiamiDF$dist.metro), mean(MiamiDF$bar_nn2), mean(MiamiDF$school_nn1), mean(MiamiDF$worship_nn1),
+                    mean(MiamiDF$parking_nn2), mean(MiamiDF$office_nn3), mean(MiamiDF$hospital_nn1)),
+           Median = c(median(MiamiDF$dist.metro), median(MiamiDF$bar_nn2), median(MiamiDF$school_nn1), median(MiamiDF$worship_nn1),
+                      median(MiamiDF$parking_nn2), median(MiamiDF$office_nn3), median(MiamiDF$hospital_nn1)),
+           Max = c(max(MiamiDF$dist.metro), max(MiamiDF$bar_nn2), max(MiamiDF$school_nn1), max(MiamiDF$worship_nn1),
+                   max(MiamiDF$parking_nn2), max(MiamiDF$office_nn3), max(MiamiDF$hospital_nn1)),
+           Min = c(min(MiamiDF$dist.metro), min(MiamiDF$bar_nn2), min(MiamiDF$school_nn1), min(MiamiDF$worship_nn1),
+                   min(MiamiDF$parking_nn2), min(MiamiDF$office_nn3), min(MiamiDF$hospital_nn1)),
+           Standard_Deviation = c(sd(MiamiDF$dist.metro), sd(MiamiDF$bar_nn2), sd(MiamiDF$school_nn1), sd(MiamiDF$worship_nn1),
+                                  sd(MiamiDF$parking_nn2), sd(MiamiDF$office_nn3), sd(MiamiDF$hospital_nn1)))%>%
+  kable() %>%
+  kable_styling() %>%
+  footnote(general_title = "Summary Statistics of Amenities and public services",
+           general = "Table 1.3")
+```
+
+### Spatial Structures
+```{r spatial, message=FALSE, warning=FALSE, echo=FALSE}
+## Spatial Structures
+data.frame(Amenities = c("Dist.Shore", "Lag_Price", "Median_Rent", "Median_Income", "Pct_white","Pct_Hispanic"), 
+           Description = c("Distance to coast", "Average price of the 5 closest houses", "Median Rent according to the census tract", 
+                           "Median Income according to the census tract","Percentage of White residents",
+                           "Percentage of Hispanic residents"),
+           Mean = c(mean(MiamiDF$logCoastDist), mean(MiamiDF$lagPrice), mean(MiamiDF$MedRent, na.rm = T), mean(MiamiDF$MedHHInc),
+                    mean(MiamiDF$pctWhite), mean(MiamiDF$pctHispanic)),
+           Median = c(median(MiamiDF$logCoastDist), median(MiamiDF$lagPrice), median(MiamiDF$MedRent, na.rm = T), median(MiamiDF$MedHHInc),
+                      median(MiamiDF$pctWhite), median(MiamiDF$pctHispanic)),
+           Max = c(max(MiamiDF$logCoastDist), max(MiamiDF$lagPrice), max(MiamiDF$MedRent, na.rm = T), max(MiamiDF$MedHHInc),
+                   max(MiamiDF$pctWhite), max(MiamiDF$pctHispanic)),
+           Min = c(min(MiamiDF$logCoastDist), min(MiamiDF$lagPrice), min(MiamiDF$MedRent, na.rm = T), min(MiamiDF$MedHHInc),
+                   min(MiamiDF$pctWhite), min(MiamiDF$pctHispanic)),
+           Standard_Deviation = c(sd(MiamiDF$logCoastDist), sd(MiamiDF$lagPrice), sd(MiamiDF$MedRent, na.rm = T), sd(MiamiDF$MedHHInc),
+                                  sd(MiamiDF$pctWhite), sd(MiamiDF$pctHispanic)))%>%
+  kable() %>%
+  kable_styling() %>%
+  footnote(general_title = "Summary Statistics of Spatail Structures",
+           general = "Table 1.4")
+```
+
+# Methods
+Models can be judged by their accuracy or their generalizability. The accuracy of a model reflects how close predicted values are to the observed values. This can be measured by the adjusted R-squared, which tells us how much of the variation in the dependent variable, house prices, is explained by the independent variables in the model.
+
+FOr the purpose of this project, we attempted to maximize our model's generalizability. A generalizable model is one that can successfully predict on new data. To determine our models' generalizability, we randomly split our data into a training set and a testing set. We then performed a stepwise regression, adding one dependent variable at a time and determining whether the mean absolute error (MAE) of the model went up or down.
+
+## Correlation Matrix
+
+The presence of highly correlated, or colinear, variables in a model can lead to unwanted redundancy. We used the correlation matrix below to determine which variables are colinear.
+```{r corr_matrix, message=FALSE, warning=FALSE}
+## Correlation matrix
+
+numericVars1 <- 
+  select_if(st_drop_geometry(MiamiDF), is.numeric) %>% na.omit() %>%
+  dplyr::select(LivingSqFt,EffectiveYearBuilt,SalePrice,ActualSqFt,LotSize,Bath,Stories,Bed)
+
+ggcorrplot(
+  round(cor(numericVars1), 1), 
+  p.mat = cor_pmat(numericVars1),
+  colors = c("#25CB10", "white", "#FA7800"),
+  type="lower",
+  insig = "blank") +  
+  labs(title = "Correlation across Internal Characteristics", caption="Figure 1.1") 
+
+numericVars2 <- 
+  select_if(st_drop_geometry(MiamiDF), is.numeric) %>% na.omit() %>%
+  dplyr::select(dist.metro,bar_nn2,school_nn1,worship_nn1,parking_nn2,office_nn3,hospital_nn1, SalePrice)
+
+ggcorrplot(
+  round(cor(numericVars2), 1), 
+  p.mat = cor_pmat(numericVars2),
+  colors = c("#25CB10", "white", "#FA7800"),
+  type="lower",
+  insig = "blank") +  
+  labs(title = "Correlation across Amenities and public services", caption="Figure 1.2") 
+
+numericVars3 <- 
+  select_if(st_drop_geometry(MiamiDF), is.numeric) %>% na.omit() %>%
+  dplyr::select(logCoastDist,lagPrice,MedRent,MedHHInc,pctWhite,pctHispanic, SalePrice)
+
+ggcorrplot(
+  round(cor(numericVars3), 1), 
+  p.mat = cor_pmat(numericVars3),
+  colors = c("#25CB10", "white", "#FA7800"),
+  type="lower",
+  insig = "blank") +  
+  labs(title = "Correlation across Spatial Structures", caption="Figure 1.3") 
+
+numericVars4 <- 
+  select_if(st_drop_geometry(MiamiDF), is.numeric) %>% na.omit() %>%
+  dplyr::select(Docks, LuxuryPool, Whirpool, `XFs_Elevator - Passenger`, Fence, `8ftres3to8ftPool`,`2to4ftPool`,
+         `3to6ftPool`,`3to8ftPool`, SalePrice)
+
+ggcorrplot(
+  round(cor(numericVars4), 1), 
+  p.mat = cor_pmat(numericVars4),
+  colors = c("#25CB10", "white", "#FA7800"),
+  type="lower",
+  insig = "blank") +  
+  labs(title = "Correlation across Categorical Features", caption="Figure 1.4")
+```
+
+
+## Home Price Correlation Scatter Plots
+
+To help us identify which variables might be most important to include in our model, we generated the following scatter plots visualizing the correlation between independent variables and home sale prices.
+
+```{r corr1, message=FALSE, warning=FALSE}
+ggplot(MiamiDF, aes(x = SalePrice, y = ActualSqFt)) +
+  geom_point() +
+  geom_smooth(method = "lm", color = "green") +
+  labs(title = "Scatter Plot - SalePrice/ActualSqFt",
+       x = "Sale Price",
+       y = "Actual Sq Ft",
+       subtitle = "Figure 2.1") +
+  theme(
+    legend.position = "none"
+  )
+
+ggplot(MiamiDF, aes(x = SalePrice, y = MedHHInc)) +
+  geom_point() +
+  geom_smooth(method = "lm", color = "green") +
+  labs(title = "Scatter Plot - SalePrice/Median Income",
+       x = "Sale Price",
+       y = "Median Income",
+       subtitle = "Figure 2.2") +
+  theme(
+    legend.position = "none"
+  )
+
+ggplot(MiamiDF, aes(x = SalePrice, y = logCoastDist)) +
+  geom_point() +
+  geom_smooth(method = "lm", color = "green") +
+  labs(title = "Scatter Plot - SalePrice/Shore Distance",
+       x = "Sale Price",
+       y = "Distance to Shore",
+       subtitle = "Figure 2.3") +
+  theme(
+    legend.position = "none"
+  )
+
+ggplot(MiamiDF, aes(x = SalePrice, y = school_nn1)) +
+  geom_point() +
+  geom_smooth(method = "lm", color = "green") +
+  labs(title = "Scatter Plot - SalePrice/School",
+       x = "Sale Price",
+       y = "Distance to School",
+       subtitle = "Figure 2.4") +
+  theme(
+    legend.position = "none"
+  )
+
+ggplot(MiamiDF, aes(x = SalePrice, y = worship_nn1)) +
+  geom_point() +
+  geom_smooth(method = "lm", color = "green") +
+  labs(title = "Scatter Plot - SalePrice/Place of Worhship",
+       x = "Sale Price",
+       y = "Distance to Place of worship",
+       subtitle = "Figure 2.5") +
+  theme(
+    legend.position = "none"
+  )
+```
+
+## Maps
+
+The following map visualizes sale prices from the data set we used to train our model. The clustering of sale prices gave us an idea about certain spatial relationships which we used to identify our independent variables.      
+
+### Sale Price Map
+```{r sale_map, message=FALSE, warning=FALSE}
+### Sale Price
+ggplot() +
+  geom_sf(data = Neighborhoods_combine, fill = "grey40") +
+  geom_sf(data = MiamiDF, aes(colour = q5(SalePrice)), 
+          show.legend = "point", size = 1) +
+  scale_colour_manual(values=palette5,
+                      labels=qBr(MiamiDF,"SalePrice"),
+                      name="Quintile\nBreaks") +
+  labs(title="Sale Price, Miami", subtitle = "Miami-Dade County", caption="Figure 3.1") +
+  mapTheme()+ 
+  theme(plot.title = element_text(size=22))
+```
+
+### Independent Variable Maps
+
+The first two maps represent the racial segregation in Miami and Miami Beach. While we were hesitant to use racial data in our model,including the spatial structure of segregation improved our model's generalizability. The third map shows the location of the metro stops. Although we didn't find a strong correlation between distance to metro stops and home sale prices, we still found that inclusion of this variable improved our model.
+```{r var_map1, message=FALSE, warning=FALSE}
+## Percent White
+ggplot(Miamitracts)+
+  geom_sf(data = Miamitracts)+
+  geom_sf(aes(fill = q5(pctWhite)), color = "transparent") +
+  scale_fill_manual(values = palette5,
+                    labels = qBr(Miamitracts, "pctWhite"),
+                    name = "Percent White\n(Quintile Breaks)") +
+  labs(title = "Percent of White Residents", subtitle = "Miami-Dade County", caption="Figure 3.2") +
+  mapTheme() + 
+  theme(plot.title = element_text(size=22))
+
+## Percent Hispanic
+ggplot(Miamitracts)+
+  geom_sf(data = Miamitracts)+
+  geom_sf(aes(fill = q5(pctHispanic)), color = "transparent") +
+  scale_fill_manual(values = palette5,
+                    labels = qBr(Miamitracts, "pctHispanic"),
+                    name = "Percent Hispanic\n(Quintile Breaks)") +
+  labs(title = "Percent of Hispanic Residents", subtitle = "Miami-Dade County", caption="Figure 3.3") +
+  mapTheme() + 
+  theme(plot.title = element_text(size=22))
+
+## Metro Stations
+ggplot() +
+  geom_sf(data=Neighborhoods_combine)+
+  geom_sf(data=MiamiDF, show.legend = FALSE, size = .1)+
+  geom_sf(data=metroStops,
+          aes(colour = 'red'),
+          show.legend = FALSE) +
+  labs(title = "Metro Stops", subtitle = "Red Dots indicate Metro Stops", caption="Figure 3.4") +
+  mapTheme() + 
+  theme(plot.title = element_text(size=22))
 
 ```
+
+# Results 
 
 ### OLS Regression 
 
 #### Split dataframe into training and testing datasets
 
-```{r Split, message=FALSE, warning=FALSE}
-
+```{r Split, message=FALSE, warning=FALSE, echo=FALSE}
 # Remove Challenge Houses
 MiamiDFKnown <- MiamiDF[!(MiamiDF$SalePrice==0),]
 
@@ -848,30 +1008,28 @@ inTrain <- caret::createDataPartition(
 # split data into training and test, before comma is row, after comma is column
 Miami.training <- MiamiDFKnown[inTrain,] 
 Miami.test     <- MiamiDFKnown[-inTrain,]  
-
 ```
 
 #### Regression and predicting Saleprice for test dataset
 
-```{r Regression, message=FALSE, warning=FALSE}
-
+The output below provides a summary of our model. We experimented with different combinations of the independent variable to maximize generalizability as measured by MAE and accuracy measured by adjusted R sqaured.
+```{r Regression, message=FALSE, warning=FALSE, echo=FALSE}
 reg <- lm(SalePrice ~ ., data = st_drop_geometry(Miami.training) %>% 
              dplyr::select(SalePrice,ActualSqFt, Neighbourhood_name,MedHHInc, pctWhite, pctHispanic, worship_nn1,
                            `8ftres3to8ftPool`,`2to4ftPool`,Whirpool,LuxuryPool, LotSize, park_nn4, bar_nn2, hospital_nn1,
                            `3to6ftPool`,`3to8ftPool`,BedCat,Docks,lagPrice,parking_nn2,school_nn1, ElementarySchool,
                            EffectiveYearBuilt,Zoning,Bath,Stories,logCoastDist,`Property.City`,office_nn3, dist.metro,Fence,`XFs_Elevator - Passenger`))
+
 summ(reg)
 summary(reg)
 
 ## predicting on new data
 reg_predict <- predict(reg, newdata = Miami.test, na.action = na.pass)
-
 ```
 
 #### Accuracy - Mean Absolute Error
-
+The following graph shows the distribution of absolute errors in our model. While most of our predictions are clustered at the low end of the graph, there are outliers of over $2,000,000 that are negatively impacting the MAE of the model. 
 ```{r MAE,message=FALSE, warning=FALSE}
-
 Miami.test <-
   Miami.test %>%
   mutate(SalePrice.Predict = predict(reg, Miami.test),
@@ -883,79 +1041,75 @@ mean(Miami.test$SalePrice.AbsError, na.rm = T)
 mean(Miami.test$SalePrice.APE, na.rm = T)
 
 hist(Miami.test$`SalePrice.AbsError`,xlab="Sales Price Absolute Error",
-     breaks=50, col="purple")
+     breaks=50, col="purple", main = "Histogram of Sales Price Absolute Error in the test set ")
 ```
 
-#### Spatial Corellation of error
+#### Table of MAE and MAPE
+```{r table_mae, warning=FALSE, message=FALSE}
 
+rmse.train <- caret::MAE(predict(reg), Miami.training$SalePrice)
+rmse.test  <- caret::MAE(reg_predict, Miami.test$SalePrice)
+
+data.frame(DataSet = "Test set",
+           Mean_Absolute_Error = mean(Miami.test$SalePrice.AbsError),
+           Mean_Absolute_Percent_Error =mean(Miami.test$SalePrice.APE ))%>%
+  kable() %>%
+  kable_styling() %>%
+  footnote(general_title = "Summary Statistics of Test dataset",
+           general = "Table 2.1")
+
+```
+
+#### Spatial Correlation of residuals
+```{r Spatial_Residuals, message=FALSE, warning=FALSE}
+
+ggplot() +
+    geom_sf(data = Neighborhoods_combine, fill = "grey40") +
+    geom_sf(data = Miami.test, aes(colour = q5(SalePrice.AbsError)),
+            show.legend = "point", size = 1) +
+    scale_colour_manual(values = palette5,
+                     labels=qBr(Miami.test,"SalePrice.AbsError"),
+                     name="Quintile\nBreaks ($)") +
+    labs(title="Residuals", caption="Figure 4.1") +
+    mapTheme()
+
+```
+
+#### Spatial Correlation of error
+The first plot shows that as the price of a house increases, the prices of nearby houses also increase. This demonstrates the importance of including spatial features in our model.
+
+The second plot shows that the errors of our model are also spatially clustered. This indicates that our model is missing important spatial features.
 ```{r Spatial_R, message=FALSE, warning=FALSE}
-
 # Adding in Spatial Correlation of Errors 
-
 Miami.testdistinct <- distinct (Miami.test,geometry,.keep_all=TRUE)
 coords.test <-  st_coordinates(Miami.testdistinct) 
 neighborList.test <- knn2nb(knearneigh(coords.test, k_nearest_neighbors))
 spatialWeights.test <- nb2listw(neighborList.test, style="W")
 Miami.testdistinct$lagPriceError <- lag.listw(spatialWeights.test, Miami.testdistinct$SalePrice.AbsError)
-
 ggplot(MiamiDFKnown, aes(x=lagPrice, y=SalePrice)) +
   geom_point(colour = "#FA7800") +
   geom_smooth(method = "lm", se = FALSE, colour = "#25CB10") +
   labs(title = "Price as a function of the spatial lag of price",
-       caption = "Public Policy Analytics, Figure 6.6",
+       caption = "Figure 4.2",
        x = "Spatial lag of price (Mean price of 5 nearest neighbors)",
        y = "Sale Price") +
   plotTheme()
-
 ggplot(Miami.testdistinct, aes(x=lagPriceError, y=SalePrice)) +
   geom_point(colour = "#FA7800") +
   geom_smooth(method = "lm", se = FALSE, colour = "#25CB10") +
   labs(title = "Error as a function of the spatial lag of price",
-       caption = "",
+       caption="Figure 4.3",
        x = "Spatial lag of errors (Mean error of 5 nearest neighbors)",
        y = "Sale Price") +
   plotTheme()
-
 ```
-
-#### Cross Validation
-
-```{r Cross_Validation, message=FALSE, warning=FALSE}
-
-# Cross Validation 
-fitControl <- trainControl(method = "cv", 
-                           number = 10,
-                           # savePredictions differs from book
-                           savePredictions = TRUE)
-
-
-# for k-folds CV
-
-reg.cv <-  
-  train(SalePrice ~ ., data = st_drop_geometry(MiamiDFKnown) %>%  
-              dplyr::select(SalePrice,ActualSqFt, Neighbourhood_name,MedHHInc, pctWhite, pctHispanic, worship_nn1,
-                            `8ftres3to8ftPool`,`2to4ftPool`,Whirpool,LuxuryPool, LotSize, park_nn4, bar_nn2, hospital_nn1,
-                            `3to6ftPool`,`3to8ftPool`,BedCat,Docks,lagPrice,parking_nn2,school_nn1, ElementarySchool,
-                            EffectiveYearBuilt,Zoning,Bath,Stories,logCoastDist,`Property.City`,office_nn3, dist.metro,Fence,`XFs_Elevator - Passenger`
-            ),  
-       method = "lm",  
-       trControl = fitControl,  
-       na.action = na.pass)
-
-reg.cv
-
-reg.cv$resample
-
-```
-
 #### Moran I's
 
+Moran's I provides another means of determining whether our errors are spatially correlated. Moran's I here is positive, suggesting positive spatial autocorrelation in our model.
 ```{r MoranIs, message=FALSE, warning=FALSE}
-
 # Moran's I
 moranTest <- moran.mc(Miami.testdistinct$SalePrice.AbsError, 
                       spatialWeights.test, nsim = 999)
-
 ggplot(as.data.frame(moranTest$res[c(1:999)]), aes(moranTest$res[c(1:999)])) +
   geom_histogram(binwidth = 0.01) +
   geom_vline(aes(xintercept = moranTest$statistic), colour = "#FA7800",size=1) +
@@ -964,15 +1118,15 @@ ggplot(as.data.frame(moranTest$res[c(1:999)]), aes(moranTest$res[c(1:999)])) +
        subtitle= "Observed Moran's I in orange",
        x="Moran's I",
        y="Count",
-       caption="Public Policy Analytics, Figure 6.8") +
+       caption="Figure 4.4") +
   plotTheme()
-
 ```
 
 #### Error by neighborhood
+To explore the spatial nature of our errors, we calculated the MAE for houses within each neighborhood and for both cities.The first table shows that our model's performance varies across neighborhoods, though it does not perform particularly well in any neighborhood.The lowest MAE is still substantial at $50,365 within the Latin Quarter.
 
+The second table demonstrates that our model performs better on Miami houses than on Miami Beach houses.
 ```{r Neighbourhood, message=FALSE, message=FALSE}
-
 # Errors by Group
 nhood_sum <- Miami.test %>% 
   group_by(Neighbourhood_name) %>%
@@ -991,26 +1145,80 @@ city_sum <- Miami.test %>%
   summarize(meanPrice = mean(SalePrice, na.rm = T),
             meanPrediction = mean(SalePrice.Predict, na.rm = T),
             meanMAE = mean(SalePrice.AbsError, na.rm = T))
-
 city_sum %>% 
   st_drop_geometry %>%
   arrange(desc(meanMAE)) %>% 
   kable() %>% kable_styling()
 ```
 
+#### Map of Predicted Values
+```{r prediction_map, message=FALSE, warning=FALSE}
+
+MiamiDF$PredictedVal <- predict(reg, newdata = MiamiDF)
+MiamiDF$Predict <- ifelse((MiamiDF$toPredict == 0), "Known SalePrice", "Unknown SalePrice")
+
+ggplot() +
+  geom_sf(data = Neighborhoods_combine, fill = "grey40") +
+  geom_sf(data = MiamiDF, aes(colour = q5(PredictedVal)), 
+          show.legend = "point", size = 1) +
+  scale_colour_manual(values=palette5,
+                      labels=qBr(MiamiDF,"PredictedVal"),
+                      name="Quintile\nBreaks") +
+  facet_wrap(~Predict)+
+  labs(title="Predicted Sale Price", subtitle = "Miami-Dade County", caption="Figure 5.1") +
+  mapTheme()+ 
+  theme(plot.title = element_text(size=22))
+```
+
+#### Map of MAPE by Neighborhood
+```{r map_mape, message=FALSE, warning=FALSE}
+
+map_preds_sum <- Miami.test %>% 
+  group_by(Neighbourhood_name) %>% 
+  summarise(meanMAPE = mean(SalePrice.APE)*100)
+
+ggplot() +
+  geom_sf(data = Neighborhoods_combine %>% 
+            left_join(st_drop_geometry(map_preds_sum), by = "Neighbourhood_name"),
+          aes(fill = q5(meanMAPE))) +
+  geom_sf(data = Miami.test, colour = "black", size = .5) +
+  scale_fill_manual(values = palette5,
+                    labels=qBr(map_preds_sum,"meanMAPE"),
+                    name="Quintile\nBreaks") +
+  mapTheme() +
+  labs(title="Absolute sale price percent errors by Neighborhood", caption="Figure 5.2")
+
+```
+
+#### Scatterplot of MAPE by Neighborhood
+```{r scatterplot_mape, message=FALSE, warning=FALSE}
+
+map_preds_sum <- Miami.test %>% 
+  group_by(Neighbourhood_name) %>% 
+  summarise(meanMAPE = mean(SalePrice.APE),
+            meanPrice = mean(SalePrice.Predict))
+
+
+ggplot(map_preds_sum, aes(x = meanPrice, y = meanMAPE)) +
+  geom_point() +
+  geom_smooth(method = "lm", color = "green") +
+  labs(title = "Scatter Plot - SalePrice/MAPE by neighborhood",
+       x = "Sale Price",
+       y = "MAPE",
+       subtitle = "Figure 5.3") +
+  theme(
+    legend.position = "none"
+  )
+```
+
 #### Generalization
 
+The spatial clustering of errors in our model is visualized below.
+
 ```{r Generalization, message=FALSE, warning=FALSE}
-
 # Measure Generalizability
-## Mean Square Error train and test
-rmse.train <- caret::MAE(predict(reg), Miami.training$SalePrice)
-rmse.test  <- caret::MAE(reg_predict, Miami.test$SalePrice)
-
-cat("Train MAE: ", as.integer(rmse.train), " \n","Test MAE: ", as.integer(rmse.test))
 
 # Plotting accuracy metrics
-
 preds.train <- data.frame(pred   = predict(reg),
                           actual = Miami.training$SalePrice,
                           source = "training data")
@@ -1018,7 +1226,6 @@ preds.test  <- data.frame(pred   = reg_predict,
                           actual = Miami.test$SalePrice,
                           source = "testing data")
 preds <- rbind(preds.train, preds.test)
-
 ggplot(preds, aes(x = pred, y = actual, color = source)) +
   geom_point() +
   geom_smooth(method = "lm", color = "green") +
@@ -1027,9 +1234,129 @@ ggplot(preds, aes(x = pred, y = actual, color = source)) +
   theme_bw() +
   facet_wrap(~source, ncol = 2) +
   labs(title = "Comparing predictions to actual values",
+       caption="Figure 6.1",
        x = "Predicted Value",
        y = "Actual Value") +
   theme(
     legend.position = "none"
   )
 ```
+
+#### Cross Validation
+
+When calculating MAE above, the data was randomly split into a training and a testing set. This method entails a risk that the data will split poorly, generating a misleading MAE. To reduce this risk, we also analyzed our model using cross validation. We divided the data into 100 equal sized subsets, which were further subset into training and testing sets. For each of the 10 subsets, the MAE was calculated. We used this method to find the model with the best average MAE across 100 subsets.
+```{r Cross_Validation, message=FALSE, warning=FALSE, echo=FALSE}
+# Cross Validation 
+fitControl <- trainControl(method = "cv", 
+                           number = 100,
+                           # savePredictions differs from book
+                           savePredictions = TRUE)
+
+# for k-folds CV
+reg.cv <-  
+  train(SalePrice ~ ., data = st_drop_geometry(MiamiDFKnown) %>%  
+              dplyr::select(SalePrice,ActualSqFt, Neighbourhood_name,MedHHInc, pctWhite, pctHispanic, worship_nn1,
+                            `8ftres3to8ftPool`,`2to4ftPool`,Whirpool,LuxuryPool, LotSize, park_nn4, bar_nn2, hospital_nn1,
+                            `3to6ftPool`,`3to8ftPool`,BedCat,Docks,lagPrice,parking_nn2,school_nn1, ElementarySchool,
+                            EffectiveYearBuilt,Zoning,Bath,Stories,logCoastDist,`Property.City`,office_nn3, dist.metro,Fence,`XFs_Elevator - Passenger`
+            ),  
+       method = "lm",  
+       trControl = fitControl,  
+       na.action = na.pass)
+
+reg.cv
+
+reg.cv$resample
+
+```
+
+#### Cross Validation Test Results
+```{r crossvaltest, message=FALSE, warning=FALSE}
+
+data.frame(Test = c("Cross_Validation"), 
+           Mean = mean(reg.cv$resample[,3]),
+           Max = max(reg.cv$resample[,3]),
+           Min = min(reg.cv$resample[,3]),
+           Standard_Deviation = sd(reg.cv$resample[,3]))%>%
+  kable() %>%
+  kable_styling() %>%
+  footnote(general_title = "Summary Statistics of Cross Validation, k = 100 folds",
+           general = "Table 3.1")
+```
+
+The mean absolute error, root-mean-square-error, and r-squared for each of the 10 subsets is visualized below. 
+
+```{r crossvalviz, message=FALSE, warning=FALSE}
+reg.cv$resample %>% 
+  pivot_longer(-Resample) %>% 
+  mutate(name = as.factor(name)) %>% 
+  ggplot(., aes(x = name, y = value, color = name)) +
+  geom_jitter(width = 0.1) +
+  facet_wrap(~name, ncol = 3, scales = "free") +
+  theme_bw() +
+  theme(
+    legend.position = "none"
+  )
+```
+
+#### Histogram of MAE
+
+```{r crossval_hist, message=FALSE, warning=FALSE}
+
+hist(reg.cv$resample[,3],xlab="MAE", col="purple", breaks = 20, main = "Histogram of MAE")
+
+```
+
+#### Plot of Predicted Values
+```{r prediction_plot, message=FALSE, warning=FALSE}
+
+preds        <- data.frame(pred   = predict(reg.cv),
+                          actual = MiamiDFKnown$SalePrice,
+                          source = "Cross Validation")
+ggplot(preds, aes(x = pred, y = actual, color = source)) +
+  geom_point() +
+  geom_smooth(method = "lm", color = "green") +
+  geom_abline(color = "orange") +
+  coord_equal() +
+  theme_bw() +
+  facet_wrap(~source, ncol = 2) +
+  labs(title = "Comparing predictions to actual values",
+       caption="Figure 6.2",
+       x = "Predicted Value",
+       y = "Actual Value") +
+  theme(
+    legend.position = "none"
+  )
+```
+
+#### Generalizability by Income
+To further test the generalizability of the model, we calculated MAPE for below and above average census tracts. The results indicate that our model has larger percentage of absolute error in below average income census tracts when compared to above average income census tracts. 
+```{r race, message=FALSE, warning=FALSE}
+
+Miamitracts <- Miamitracts %>%
+  mutate(incomeContext = ifelse(MedHHInc > 59223.68, "Above Average Income", "Below Average Income") )
+
+ggplot() + geom_sf(data = Miamitracts, aes(fill = incomeContext)) +
+    scale_fill_manual(values = c("#25CB10", "#FA7800"), name="Income Context") +
+    labs(title = "Income Context") +
+    mapTheme() + theme(legend.position="bottom")
+
+st_join(Miami.test, Miamitracts) %>% 
+  group_by(incomeContext) %>%
+  summarize(mean.MAPE = scales::percent(mean(SalePrice.APE, na.rm = T))) %>%
+  st_drop_geometry() %>%
+  spread(incomeContext, mean.MAPE) %>%
+  kable(caption = "Test set MAPE by neighborhood income context")
+
+```
+
+# Discussion     
+   
+Unfortunately our analysis suggests that the model is not as effective as we hoped. Our MAE was around $350,000, this magnitude of error would not be acceptable for Zillow's Zestimate. We found that the adjusted square feet of a house is an important predictor for sale price, and we struggled to significantly improve the model beyond that variable. Based on our analysis of the spatial autocorrelations in our model, we are missing important spatial processes. We also suspect that key internal characteristics are missing and would have helped the model if we had access to them.  
+      
+The lack of open source data for Miami Beach was a key barrier in the development of this model. Our model was unable to successfully predict sale prices for the very expensive houses in Miami Beach. Out of all the variables we used, the negative correlation of the distance to the coast and home sale prices was surprising to us. 
+
+# Conclusion
+    
+We would not recommend our model to Zillow given the large errors in our predictions and the lack of finding uniform data across all the neighborhoods. This model may be improved by additional spatial features.
+
