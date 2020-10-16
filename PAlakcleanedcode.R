@@ -1031,3 +1031,107 @@ ggcorrplot(
   insig = "blank") +  
   labs(title = "Correlation across Categorical Features", caption="Figure 1.4") 
 
+
+## Scatterplots
+
+ggplot(MiamiDF, aes(x = SalePrice, y = ActualSqFt)) +
+  geom_point() +
+  geom_smooth(method = "lm", color = "green") +
+  labs(title = "Scatter Plot - SalePrice/ActualSqFt",
+       x = "Sale Price",
+       y = "Actual Sq Ft",
+       subtitle = "Figure 2.1") +
+  theme(
+    legend.position = "none"
+  )
+
+ggplot(MiamiDF, aes(x = SalePrice, y = MedHHInc)) +
+  geom_point() +
+  geom_smooth(method = "lm", color = "green") +
+  labs(title = "Scatter Plot - SalePrice/Median Income",
+       x = "Sale Price",
+       y = "Median Income",
+       subtitle = "Figure 2.2") +
+  theme(
+    legend.position = "none"
+  )
+
+ggplot(MiamiDF, aes(x = SalePrice, y = logCoastDist)) +
+  geom_point() +
+  geom_smooth(method = "lm", color = "green") +
+  labs(title = "Scatter Plot - SalePrice/Shore Distance",
+       x = "Sale Price",
+       y = "Distance to Shore",
+       subtitle = "Figure 2.3") +
+  theme(
+    legend.position = "none"
+  )
+
+ggplot(MiamiDF, aes(x = SalePrice, y = school_nn1)) +
+  geom_point() +
+  geom_smooth(method = "lm", color = "green") +
+  labs(title = "Scatter Plot - SalePrice/School",
+       x = "Sale Price",
+       y = "Distance to School",
+       subtitle = "Figure 2.4") +
+  theme(
+    legend.position = "none"
+  )
+
+ggplot(MiamiDF, aes(x = SalePrice, y = worship_nn1)) +
+  geom_point() +
+  geom_smooth(method = "lm", color = "green") +
+  labs(title = "Scatter Plot - SalePrice/Place of Worhship",
+       x = "Sale Price",
+       y = "Distance to Place of worship",
+       subtitle = "Figure 2.5") +
+  theme(
+    legend.position = "none"
+  )
+
+## Maps
+
+### Sale Price
+ggplot() +
+  geom_sf(data = Neighborhoods_combine, fill = "grey40") +
+  geom_sf(data = MiamiDF, aes(colour = q5(SalePrice)), 
+          show.legend = "point", size = .1) +
+  scale_colour_manual(values=palette5,
+                      labels=qBr(MiamiDF,"SalePrice"),
+                      name="Quintile\nBreaks") +
+  labs(title="Sale Price, Miami", subtitle = "Miami-Dade County", caption="Figure 3.1") +
+  mapTheme()+ 
+  theme(plot.title = element_text(size=22))
+
+## Percent White
+ggplot(Miamitracts)+
+  geom_sf(data = Miamitracts)+
+  geom_sf(aes(fill = q5(pctWhite)), color = "transparent") +
+  scale_fill_manual(values = palette5,
+                    labels = qBr(Miamitracts, "pctWhite"),
+                    name = "Percent White\n(Quintile Breaks)") +
+  labs(title = "Percent of White Residents", subtitle = "Miami-Dade County", caption="Figure 3.2") +
+  mapTheme() + 
+  theme(plot.title = element_text(size=22))
+
+## Percent Hispanic
+ggplot(Miamitracts)+
+  geom_sf(data = Miamitracts)+
+  geom_sf(aes(fill = q5(pctHispanic)), color = "transparent") +
+  scale_fill_manual(values = palette5,
+                    labels = qBr(Miamitracts, "pctHispanic"),
+                    name = "Percent Hispanic\n(Quintile Breaks)") +
+  labs(title = "Percent of Hispanic Residents", subtitle = "Miami-Dade County", caption="Figure 3.3") +
+  mapTheme() + 
+  theme(plot.title = element_text(size=22))
+
+## Metro Stations
+ggplot() +
+  geom_sf(data=Neighborhoods_combine)+
+  geom_sf(data=MiamiDF, show.legend = "point", size = .1)+
+  geom_sf(data=metroStops, 
+          aes(colour = 'red' ),
+          show.legend = "point", size= 2) +
+  labs(title = "Metro Stops", subtitle = "Miami-Dade County", caption="Figure 3.4") +
+  mapTheme() + 
+  theme(plot.title = element_text(size=22))
